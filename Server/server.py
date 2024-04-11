@@ -39,18 +39,25 @@ logId = 0
 
 # ORM Model for the Student table. Table name will be dynamically provided
 def ClassFactory(name):
-    # Check if the table already exists in metadata
-    existing_table = db.Model.metadata.tables.get(name)
-    if existing_table is not None:
-        return type(name, (db.Model,), {'__tablename__': name, '__table__': existing_table})
+    # Check if the model already exists in the global namespace
+    existing_model = globals().get(name)
+    
+    if existing_model is not None:
+        return existing_model
+    
+    # If the model does not exist, create it
+    tabledict = {
+        'Stud_id': db.Column(db.Integer, primary_key=True),
+        'Stud_name': db.Column(db.String(100)),
+        'Stud_marks': db.Column(db.String(100))
+    }
 
-    # If the table does not exist, create the table
-    tabledict={'Stud_id': db.Column(db.Integer, primary_key=True),
-               'Stud_name': db.Column(db.String(100)),
-               'Stud_marks': db.Column(db.String(100))}
-
-    newclass = type(name, (db.Model,), tabledict)
-    return newclass
+    new_model = type(name, (db.Model,), {'__tablename__': name, **tabledict})
+    
+    # Assign the newly created model to the global namespace
+    globals()[name] = new_model
+    
+    return new_model
 
 
 # Server endpoint for requests at http://localhost:5000/home, methond=GET
@@ -310,21 +317,27 @@ def writeRAFT():
             entriesAdded, duplicate = writeData(shard, curr_idx, data)
 
         # Returning the dictionary along with the status code 200
-        if isReplicatedToMajority:
-            message["message"] = "Data entries added"
-            message["current_idx"] = str(curr_idx + entriesAdded)
-            if duplicate > 0:
-                if duplicate == len(data):
-                    message["message"] = "No data entries added. All entries are duplicate"
-                else:
-                    message["message"] += " (" + str(duplicate) + " duplicate entries skipped)"
+        if isPrimary:
+            if isReplicatedToMajority:
+                message["message"] = "Data entries added"
+                message["current_idx"] = str(curr_idx + entriesAdded)
+                if duplicate > 0:
+                    if duplicate == len(data):
+                        message["message"] = "No data entries added. All entries are duplicate"
+                    else:
+                        message["message"] += " (" + str(duplicate) + " duplicate entries skipped)"
 
-            message["status"] = "success"
-            statusCode = 200
+                message["status"] = "success"
+                statusCode = 200
+            else:
+                message["message"] = "Data entries not added. Not replicated to majority of servers"
+                message["status"] = "Unsuccessfull"
+                statusCode = 400
         else:
-            message["message"] = "Data entries not added. Not replicated to majority of servers"
-            message["status"] = "Unsuccessfull"
-            statusCode = 400
+            if entriesAdded > 0 or duplicate > 0:
+                message["message"] = "Data entries added"
+                message["status"] = "success"
+                statusCode = 200
     except Exception as e:
         message = {"message": "Error: " + str(e), "status": "Unsuccessfull"}
         statusCode = 400
@@ -505,19 +518,25 @@ def updateRAFT():
                 updated = updateData(shard, Stud_id, entry)
 
             # Returning the dictionary along with the status code 200
-            if isReplicatedToMajority:
+            if isPrimary:
+                if isReplicatedToMajority:
+                    if updated:
+                        message["message"] = "Data entry for Stud_id:" + str(Stud_id) + " updated"
+                        message["status"] = "success"
+                        statusCode = 200
+                    else:
+                        message["message"] = "Error updating data entry"
+                        message["status"] = "Unsuccessfull"
+                        statusCode = 400
+                else:
+                    message["message"] = "Data entry not updated. Not replicated to majority of servers"
+                    message["status"] = "Unsuccessfull"
+                    statusCode = 400
+            else:
                 if updated:
                     message["message"] = "Data entry for Stud_id:" + str(Stud_id) + " updated"
                     message["status"] = "success"
                     statusCode = 200
-                else:
-                    message["message"] = "Error updating data entry"
-                    message["status"] = "Unsuccessfull"
-                    statusCode = 400
-            else:
-                message["message"] = "Data entry not updated. Not replicated to majority of servers"
-                message["status"] = "Unsuccessfull"
-                statusCode = 400
     except Exception as e:
         message = {"message": "Error: " + str(e), "status": "Unsuccessfull"}
         statusCode = 400
@@ -629,19 +648,25 @@ def deleteRAFT():
                 deleted = deleteData(shard, Stud_id)
 
             # Returning the dictionary along with the status code 200
-            if isReplicatedToMajority:
+            if isPrimary:
+                if isReplicatedToMajority:
+                    if deleted:
+                        message["message"] = "Data entry for Stud_id:" + str(Stud_id) + " removed"
+                        message["status"] = "success"
+                        statusCode = 200
+                    else:
+                        message["message"] = "Error deleting data entry"
+                        message["status"] = "Unsuccessfull"
+                        statusCode = 400
+                else:
+                    message["message"] = "Data entry not removed. Not replicated to majority of servers"
+                    message["status"] = "Unsuccessfull"
+                    statusCode = 400
+            else:
                 if deleted:
                     message["message"] = "Data entry for Stud_id:" + str(Stud_id) + " removed"
                     message["status"] = "success"
                     statusCode = 200
-                else:
-                    message["message"] = "Error deleting data entry"
-                    message["status"] = "Unsuccessfull"
-                    statusCode = 400
-            else:
-                message["message"] = "Data entry not removed. Not replicated to majority of servers"
-                message["status"] = "Unsuccessfull"
-                statusCode = 400
     except Exception as e:
         message = {"message": "Error: " + str(e), "status": "Unsuccessfull"}
         statusCode = 400
