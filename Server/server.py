@@ -10,6 +10,7 @@ from sqlalchemy.sql import text
 from sqlalchemy import Table
 import logging
 from threading import Lock
+import requests
 
 # Lock to handle the concurrency issues
 lock = Lock()
@@ -31,6 +32,10 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Creating the SQLALchemy object
 db = SQLAlchemy(app)
+
+# dictionary to store the logs
+logs = {}
+logId = 0
 
 # ORM Model for the Student table. Table name will be dynamically provided
 def ClassFactory(name):
@@ -211,6 +216,123 @@ def copy():
     # Returning the dictionary along with the status code 200
     return message, statusCode
 
+def getRequestURL(server, endpoint):
+    return "http://" + server + ":5000/" + endpoint
+
+def writeLog(log):
+    # Add the log to the logs dictionary
+    global logId
+    logs[logId] = log
+    logId += 1
+
+def writeData(shard, curr_idx, data):
+    # Write data to the database
+    try:
+        # List to store the data entries
+        dataEntries = []
+        duplicate = 0
+
+        # Iterating through the data entries. Use ORM to insert the data. Also check for duplicate entries and entries that does not violate the integrity constraints
+        for entry in data:
+            # Check if the entry already exists in the shard
+            table = ClassFactory(shard)
+            query = db.session.query(table).filter_by(Stud_id=entry['Stud_id']).all()
+            if len(query) > 0:
+                duplicate += 1
+                # If the entry already exists, skip the entry
+                continue
+            # If the entry does not exist, add the entry to the list
+            dataEntries.append(table(Stud_id=entry['Stud_id'], Stud_name=entry['Stud_name'], Stud_marks=entry['Stud_marks']))
+            print("Entry added")
+
+        # Add the data entries to the shard table
+        db.session.add_all(dataEntries)
+        db.session.commit()
+    except Exception as e:
+        return e
+    
+    return len(dataEntries), duplicate
+
+
+# Replicate write if server primary else just store the data
+# json payload: {"shard": "Shard1", "curr_idx": 0, 
+#                 "data": [{"Stud_id": 1, "Stud_name": "Abc", "Stud_marks": 10}],
+#                 "isPrimary": true,
+#                 "otherServers": ["Server1", "Server2", "Server3"]}
+@app.route('/writeRAFT', methods = ['POST'])
+def writeRAFT():
+    message = {}
+    statusCode = 0
+    response = {}
+    replicated = 0
+    duplicate = 0
+    entriesAdded = 0
+    isReplicatedToMajority = False
+
+    try:
+        # Getting the shard, current index and data entries from the payload
+        payload = request.get_json()
+        shard = payload.get('shard')
+        curr_idx = int(payload.get('curr_idx'))
+        data = payload.get('data')
+        isPrimary = payload.get('isPrimary')
+        otherServers = payload.get('otherServers')
+
+        if isPrimary:
+            # write to log and replicate to other servers
+            writeLog(payload)
+
+            # request for other servers
+            requestToReplica = {"shard": shard, 
+                        "curr_idx": curr_idx, 
+                        "data": data, 
+                        "isPrimary": False, 
+                        "otherServers": []}
+            
+            # send request to other servers
+            for server in otherServers:
+                url = getRequestURL(server, "writeRAFT")
+                response = requests.post(url, json=requestToReplica)
+
+                if response.status_code == 200:
+                    replicated += 1
+
+            # If replicated to majority of servers, write to the database
+            if replicated >= len(otherServers) // 2:
+                # writing to the database
+                entriesAdded, duplicate = writeData(shard, curr_idx, data)
+                isReplicatedToMajority = True
+        else:
+            # If not primary.
+            # write to log
+            writeLog(payload)
+            # writing to the database
+            entriesAdded, duplicate = writeData(shard, curr_idx, data)
+
+        # Returning the dictionary along with the status code 200
+        if isReplicatedToMajority:
+            message["message"] = "Data entries added"
+            message["current_idx"] = str(curr_idx + entriesAdded)
+            if duplicate > 0:
+                if duplicate == len(data):
+                    message["message"] = "No data entries added. All entries are duplicate"
+                else:
+                    message["message"] += " (" + str(duplicate) + " duplicate entries skipped)"
+
+            message["status"] = "success"
+            statusCode = 200
+        else:
+            message["message"] = "Data entries not added. Not replicated to majority of servers"
+            message["status"] = "Unsuccessfull"
+            statusCode = 400
+    except Exception as e:
+        message = {"message": "Error: " + str(e), "status": "Unsuccessfull"}
+        statusCode = 400
+
+    return message, statusCode
+            
+
+# Server endpoint for requests at http://localhost:5000/write, methond=POST
 @app.route('/write', methods = ['POST'])
 def write():
     message = {}
@@ -292,6 +414,117 @@ def read():
 
     return message, statusCode
 
+def updateData(shard, Stud_id, entry):
+    # Update the data entry in the database
+    try:
+        # Use ORM to update the data entry in the shard table
+        table = ClassFactory(shard)
+
+        db.session.query(table).filter_by(Stud_id=Stud_id).update({
+            "Stud_name" : entry['Stud_name'],
+            "Stud_marks" : entry['Stud_marks']
+        })
+        db.session.commit()
+    except Exception as e:
+        return e
+    
+    return True
+
+def isIdExists(shard, Stud_id):
+    # Check if the Stud_id exists in the shard
+    try:
+        # Use ORM to get the data entry from the shard table
+        table = ClassFactory(shard)
+        query = db.session.query(table).filter_by(Stud_id=Stud_id).all()
+        if len(query) == 0:
+            return False
+    except Exception as e:
+        return e
+    
+    return True
+
+# Replicate write if server primary else just store the data
+# Json= {"shard":"sh2",
+#       "Stud_id":2255,
+#       "data": {"Stud_id":2255,"Stud_name":GHI,"Stud_marks":28},
+#       "isPrimary":true,
+#       "otherServers":["server1","server2","server3"]
+# }
+@app.route('/updateRAFT', methods = ['PUT'])
+def updateRAFT():
+    message = {}
+    statusCode = 0
+    response = {}
+    replicated = 0
+    updated = False
+    isReplicatedToMajority = False
+
+    try:
+        # Getting the shard, Stud_id and data entry from the payload
+        payload = request.get_json()
+        shard = payload.get('shard')
+        Stud_id = int(payload.get('Stud_id'))
+        entry = payload.get('data')
+        isPrimary = payload.get('isPrimary')
+        otherServers = payload.get('otherServers')
+
+        if not isIdExists(shard, Stud_id):
+            message["message"] = "Nothing to update. Given ID does not exist."
+            message["status"] = "success"
+            statusCode = 200
+        else:
+            if isPrimary:
+                # write to log and replicate to other servers
+                writeLog(payload)
+
+                # request for other servers
+                requestToReplica = {"shard": shard, 
+                            "Stud_id": Stud_id, 
+                            "data": entry, 
+                            "isPrimary": False, 
+                            "otherServers": []}
+                
+                # send request to other servers
+                for server in otherServers:
+                    url = getRequestURL(server, "updateRAFT")
+                    response = requests.put(url, json=requestToReplica)
+
+                    if response.status_code == 200:
+                        replicated += 1
+
+                # If replicated to majority of servers, write to the database
+                if replicated >= len(otherServers) // 2:
+                    # writing to the database
+                    updated = updateData(shard, Stud_id, entry)
+                    isReplicatedToMajority = True
+            else:
+                # If not primary.
+                # write to log
+                writeLog(payload)
+                # writing to the database
+                updated = updateData(shard, Stud_id, entry)
+
+            # Returning the dictionary along with the status code 200
+            if isReplicatedToMajority:
+                if updated:
+                    message["message"] = "Data entry for Stud_id:" + str(Stud_id) + " updated"
+                    message["status"] = "success"
+                    statusCode = 200
+                else:
+                    message["message"] = "Error updating data entry"
+                    message["status"] = "Unsuccessfull"
+                    statusCode = 400
+            else:
+                message["message"] = "Data entry not updated. Not replicated to majority of servers"
+                message["status"] = "Unsuccessfull"
+                statusCode = 400
+    except Exception as e:
+        message = {"message": "Error: " + str(e), "status": "Unsuccessfull"}
+        statusCode = 400
+
+    return message, statusCode
+            
+
 # Server endpoint for requests at http://localhost:5000/update, methond=PUT
 @app.route('/update', methods = ['PUT'])
 def update():
@@ -324,6 +557,95 @@ def update():
         message = {"message": "Error: " + str(e),
                    "status": "Unsuccessfull"}
         statusCode = 400
+    return message, statusCode
+
+def deleteData(shard, Stud_id):
+    # Delete the data entry from the database
+    try:
+        # Use ORM to delete the data entry from the shard table
+        table = ClassFactory(shard)
+        query = db.session.query(table).filter_by(Stud_id=Stud_id).delete()
+        db.session.commit()
+    except Exception as e:
+        return e
+    
+    return True
+
+# Json= {"shard":"sh1",
+#         "Stud_id":2255,
+#         "isPrimary":true,
+#         "otherServers":["server1","server2","server3"]
+# }
+@app.route('/delRAFT', methods = ['DELETE'])
+def deleteRAFT():
+    message = {}
+    statusCode = 0
+    response = {}
+    replicated = 0
+    deleted = False
+    isReplicatedToMajority = False
+
+    try:
+        # Getting the shard and Stud_id from the payload
+        payload = request.get_json()
+        shard = payload.get('shard')
+        Stud_id = int(payload.get('Stud_id'))
+        isPrimary = payload.get('isPrimary')
+        otherServers = payload.get('otherServers')
+
+        if not isIdExists(shard, Stud_id):
+            message["message"] = "Nothing to delete. Given ID does not exist."
+            message["status"] = "success"
+            statusCode = 200
+        else:
+            if isPrimary:
+                # write to log and replicate to other servers
+                writeLog(payload)
+
+                # request for other servers
+                requestToReplica = {"shard": shard, 
+                            "Stud_id": Stud_id, 
+                            "isPrimary": False, 
+                            "otherServers": []}
+                
+                # send request to other servers
+                for server in otherServers:
+                    url = getRequestURL(server, "delRAFT")
+                    response = requests.delete(url, json=requestToReplica)
+
+                    if response.status_code == 200:
+                        replicated += 1
+
+                # If replicated to majority of servers, write to the database
+                if replicated >= len(otherServers) // 2:
+                    # writing to the database
+                    deleted = deleteData(shard, Stud_id)
+                    isReplicatedToMajority = True
+            else:
+                # If not primary.
+                # write to log
+                writeLog(payload)
+                # writing to the database
+                deleted = deleteData(shard, Stud_id)
+
+            # Returning the dictionary along with the status code 200
+            if isReplicatedToMajority:
+                if deleted:
+                    message["message"] = "Data entry for Stud_id:" + str(Stud_id) + " removed"
+                    message["status"] = "success"
+                    statusCode = 200
+                else:
+                    message["message"] = "Error deleting data entry"
+                    message["status"] = "Unsuccessfull"
+                    statusCode = 400
+            else:
+                message["message"] = "Data entry not removed. Not replicated to majority of servers"
+                message["status"] = "Unsuccessfull"
+                statusCode = 400
+    except Exception as e:
+        message = {"message": "Error: " + str(e), "status": "Unsuccessfull"}
+        statusCode = 400
+
     return message, statusCode
 
 # Server endpoint for requests at http://localhost:5000/del, methond=DELETE
