@@ -7,6 +7,9 @@ check_network:
 		echo "Network my_network already exists."; \
 	fi
 
+# To create volume and provide it to the server container
+run_volume:
+	sudo docker volume create persistentStorage
 
 # Building and running the containers
 run: check_network
@@ -22,21 +25,21 @@ run_compose: check_network
 # Testing 
 run_DB_Server: check_network
 	sudo docker build -t database ./database
-	sudo docker run -d --network my-network --name DB database
+	sudo docker run -d --network my_network --name DB database
 	sudo docker build -t my-server-app ./Server
-	sudo docker run -d -p 5000:5000 -e "SERVER_ID=123456" -e "MYSQL_HOST=DB" --network my-network  --name server1 my-server-app
+	sudo docker run -d -p 5000:5000 -e "SERVER_ID=123456" -e "MYSQL_HOST=DB" --network my_network  --name server1 my-server-app
 
 # For DB
 run_DB: check_network
 	sudo docker build -t database ./database
-	sudo docker run -d --network my-network --name DB1 database
-	sudo docker run -d --network my-network --name DB2 database
+	sudo docker run -d --network my_network --name DB1 database
+	sudo docker run -d --network my_network --name DB2 database
 
 # For Server
 run_Server: check_network
 	sudo docker build -t my-server-app ./Server
-	sudo docker run -d -p 5000:5000 -e "SERVER_ID=123456" -e "MYSQL_HOST=DB1" --network my-network  --name server1 my-server-app
-	sudo docker run -d -p 5001:5000 -e "SERVER_ID=123457" -e "MYSQL_HOST=DB2" --network my-network  --name server2 my-server-app
+	sudo docker run -d -p 5000:5000 -e "SERVER_ID=123456" -e "MYSQL_HOST=DB1" -e "SERVER_NAME=server1" --network my_network -v persistentStorage:/persistentStorageMedia --name server1 my-server-app
+	sudo docker run -d -p 5001:5000 -e "SERVER_ID=123457" -e "MYSQL_HOST=DB2" -e "SERVER_NAME=server2" --network my_network -v persistentStorage:/persistentStorageMedia --name server2 my-server-app
 
 # Delete all
 run_delete:
@@ -44,9 +47,14 @@ run_delete:
 	sudo docker rm $$(sudo docker ps -a -q)
 	sudo docker rmi $$(sudo docker images -q)
 	sudo docker network rm my_network
+	sudo docker volume rm persistentStorage
 
 # # For Server
 # run_Server: check_network
 # 	sudo docker build -t my-server-app ./Server
 # 	sudo docker run -p 5000:5000 -e "SERVER_ID=123456" -e "MYSQL_HOST=DB1" --network my-network  --name server1 my-server-app
 # 	sudo docker run -p 5001:5000 -e "SERVER_ID=123457" -e "MYSQL_HOST=DB2" --network my-network  --name server2 my-server-app
+	
+
+# sudo docker run -p 5000:5000 -e "SERVER_ID=123456" -e "MYSQL_HOST=DB1" -e "SERVER_NAME=server1" --network my_network -v persistentStorage:/persistentStorageMedia --name server1 my-server-app
+# sudo docker run -p 5001:5000 -e "SERVER_ID=123457" -e "MYSQL_HOST=DB2" -e "SERVER_NAME=server2" --network my_network -v persistentStorage:/persistentStorageMedia --name server2 my-server-app

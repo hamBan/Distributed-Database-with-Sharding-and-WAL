@@ -11,12 +11,18 @@ from sqlalchemy import Table
 import logging
 from threading import Lock
 import requests
+import json
 
 # Lock to handle the concurrency issues
 lock = Lock()
 
 #creating the Flask class object
 app = Flask(__name__)
+
+# Log operations
+LOG_OPERATION_WRITE = "write"
+LOG_OPERATION_UPDATE = "update"
+LOG_OPERATION_DELETE = "delete"
 
 # Environment Variables to cnnect to database. If not present, use the default values
 DATABASE_USER = os.environ.get('MYSQL_USER', 'root')
@@ -36,6 +42,8 @@ db = SQLAlchemy(app)
 # dictionary to store the logs
 logs = {}
 logId = 0
+serverFileName = None
+VOLUME_PATH = '/persistentStorageMedia/'
 
 # ORM Model for the Student table. Table name will be dynamically provided
 def ClassFactory(name):
@@ -226,11 +234,66 @@ def copy():
 def getRequestURL(server, endpoint):
     return "http://" + server + ":5000/" + endpoint
 
-def writeLog(log):
-    # Add the log to the logs dictionary
+# Function to assign the logId
+def assignLogIdAndFileName():
+    # Check if serverFileName exists. If exists, then assign the maximum logId + 1
     global logId
-    logs[logId] = log
+    global serverFileName
+
+    if serverFileName is None:
+        serverFileName = os.environ.get('SERVER_NAME') + '.json'
+
+    if os.path.exists(VOLUME_PATH + serverFileName):
+        with open(VOLUME_PATH + serverFileName, 'r') as f:
+            data = json.load(f)
+            logId = max(data.keys()) + 1
+    else:
+        logId = 0
+
+# Function to write the log
+def writeLog(operationName, log):
+    # Add the log to the volume storage named 'persistentStorageMedia'. Use file <container_name>.log
+    global logId
+
+    # make logId as key, operationName and log as values
+    dataToWrite = {}
+    
+    dataToWrite[logId] = {"operationName": operationName, "log": log}
+
+    # Append the log to existing logs
+    if os.path.exists(VOLUME_PATH + serverFileName):
+        with open(VOLUME_PATH + serverFileName, 'r') as f:
+            data = json.load(f)
+            data.update(dataToWrite)
+    else:
+        data = dataToWrite
+
+    with open(VOLUME_PATH + serverFileName, 'w') as f:
+        json.dump(data, f)
+
     logId += 1
+
+# Function to return the logs
+@app.route('/getLogs', methods = ['GET'])
+def getLogs():
+    # Read the logs from the volume
+    message = {}
+    statusCode = 0
+    try:
+        logs = {}
+
+        if os.path.exists(VOLUME_PATH + serverFileName):
+            with open(VOLUME_PATH + serverFileName, 'r') as f:
+                logs = json.load(f)
+        else:
+            logs = {}
+        message = {"logs": logs, "status": "success"}
+        statusCode = 200
+    except Exception as e:
+        logs = {"message": "Error: " + str(e), "status": "Unsuccessfull"}
+        statusCode = 400
+    
+    return message, statusCode
 
 def writeData(shard, curr_idx, data):
     # Write data to the database
@@ -262,10 +325,11 @@ def writeData(shard, curr_idx, data):
 
 
 # Replicate write if server primary else just store the data
+# Assume 'server1' is primary and 'server2' and 'server3' are replicas
 # json payload: {"shard": "Shard1", "curr_idx": 0, 
 #                 "data": [{"Stud_id": 1, "Stud_name": "Abc", "Stud_marks": 10}],
 #                 "isPrimary": true,
-#                 "otherServers": ["Server1", "Server2", "Server3"]}
+#                 "otherServers": ["server2", "server3"]}
 @app.route('/writeRAFT', methods = ['POST'])
 def writeRAFT():
     message = {}
@@ -287,7 +351,7 @@ def writeRAFT():
 
         if isPrimary:
             # write to log and replicate to other servers
-            writeLog(payload)
+            writeLog(LOG_OPERATION_WRITE, payload)
 
             # request for other servers
             requestToReplica = {"shard": shard, 
@@ -312,7 +376,7 @@ def writeRAFT():
         else:
             # If not primary.
             # write to log
-            writeLog(payload)
+            writeLog(LOG_OPERATION_WRITE, payload)
             # writing to the database
             entriesAdded, duplicate = writeData(shard, curr_idx, data)
 
@@ -457,11 +521,12 @@ def isIdExists(shard, Stud_id):
     return True
 
 # Replicate write if server primary else just store the data
+# Assume 'server1' is primary and 'server2' and 'server3' are replicas
 # Json= {"shard":"sh2",
 #       "Stud_id":2255,
 #       "data": {"Stud_id":2255,"Stud_name":GHI,"Stud_marks":28},
 #       "isPrimary":true,
-#       "otherServers":["server1","server2","server3"]
+#       "otherServers":["server2","server3"]
 # }
 @app.route('/updateRAFT', methods = ['PUT'])
 def updateRAFT():
@@ -488,7 +553,7 @@ def updateRAFT():
         else:
             if isPrimary:
                 # write to log and replicate to other servers
-                writeLog(payload)
+                writeLog(LOG_OPERATION_UPDATE, payload)
 
                 # request for other servers
                 requestToReplica = {"shard": shard, 
@@ -513,7 +578,7 @@ def updateRAFT():
             else:
                 # If not primary.
                 # write to log
-                writeLog(payload)
+                writeLog(LOG_OPERATION_UPDATE, payload)
                 # writing to the database
                 updated = updateData(shard, Stud_id, entry)
 
@@ -590,6 +655,7 @@ def deleteData(shard, Stud_id):
     
     return True
 
+# Assume 'server1' is primary and 'server2' and 'server3' are replicas
 # Json= {"shard":"sh1",
 #         "Stud_id":2255,
 #         "isPrimary":true,
@@ -619,7 +685,7 @@ def deleteRAFT():
         else:
             if isPrimary:
                 # write to log and replicate to other servers
-                writeLog(payload)
+                writeLog(LOG_OPERATION_DELETE, payload)
 
                 # request for other servers
                 requestToReplica = {"shard": shard, 
@@ -643,7 +709,7 @@ def deleteRAFT():
             else:
                 # If not primary.
                 # write to log
-                writeLog(payload)
+                writeLog(LOG_OPERATION_DELETE, payload)
                 # writing to the database
                 deleted = deleteData(shard, Stud_id)
 
@@ -718,4 +784,6 @@ def invalidUrlHandler(path):
     return errorMessage, 404
     
 if __name__ == '__main__':
+    # Assign the logId and serverFileName
+    assignLogIdAndFileName()
     app.run(host="0.0.0.0", port=5000)
