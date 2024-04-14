@@ -1,10 +1,10 @@
 import mysql.connector
 
 connection = mysql.connector.connect(
-    host="DB",
+    host="DB1",
     user="root",
-    password="your_mysql_password",
-    database="StudT"
+    password="abc",
+    database="shardsDB"
 )
 
 cursor = connection.cursor()
