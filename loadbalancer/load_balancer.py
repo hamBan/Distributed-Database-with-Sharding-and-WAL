@@ -461,9 +461,16 @@ def delete():
         print(e)
         return jsonify({'message': 'Update Unsuccessful'}), 400 
 
-
-
-
+@app.route('/read/<server_id>', methods=['GET'])
+def read_server_data(server_id):
+    payload = request.get_json()
+    load_balancer_url = f"{get_server_url(serverName)}copy"
+    payload2 = {
+        'shards': server_shard_mapping[server_id]
+    }
+    response = requests.delete(load_balancer_url, json=payload2)
+    return response.json()
+    
 # Error handling
 @app.errorhandler(404)
 def not_found_error(error):
