@@ -36,16 +36,29 @@ def update_log(server):
         for seq_num in log:
             if log[seq_num]['shard_id'] == shard and seq_num > max_seq_present:
                 max_seq_present = seq_num
-        max_seq = 0
-        for seq_num in primary_log:
-            if primary_log[seq_num]['shard_id'] == shard and seq_num > max_seq_present:
-                log[seq_num] = primary_log[seq_num]
-                url = f'http://{server}:7000/{primary_log[seq_num]['operation_name']}'
+            elif log[seq_num]['shard_id'] == shard and log[seq_num]['is_committed'] == 0:
+                url = f'http://{server}:5000/{primary_log[seq_num]['operation_name']}'
                 data = primary_log[seq_num]['operation_name']
                 if primary_log[seq_num]['operation_name'] == 'update':
                     requests.put(url, json=data)
                 elif primary_log[seq_num]['operation_name'] == 'write':
                     requests.post(url, json=data)
+                elif primary_log[seq_num]['operation_name'] == 'del':
+                    requests.delete(url, json=data)
+                log[seq_num]['is_committed'] = 1
+        max_seq = 0
+        for seq_num in primary_log:
+            if primary_log[seq_num]['shard_id'] == shard and seq_num > max_seq_present:
+                log[seq_num] = primary_log[seq_num]
+                url = f'http://{server}:5000/{primary_log[seq_num]['operation_name']}'
+                data = primary_log[seq_num]['operation_name']
+                if primary_log[seq_num]['operation_name'] == 'update':
+                    requests.put(url, json=data)
+                elif primary_log[seq_num]['operation_name'] == 'write':
+                    requests.post(url, json=data)
+                elif primary_log[seq_num]['operation_name'] == 'del':
+                    requests.delete(url, json=data)
+                log[seq_num]['is_committed'] = 1
     logfile_write = open(server+'.json','w')
     json.dump(log,logfile_write)
     logfile_write.close()
@@ -59,6 +72,16 @@ def replicate_log(server):
         for seq_num in primary_log:
             if primary_log[seq_num]['shard_id'] == shard:
                 log[seq_num] = primary_log[seq_num]
+                url = f'http://{server}:5000/{primary_log[seq_num]['operation_name']}'
+                data = primary_log[seq_num]['operation_name']
+                if primary_log[seq_num]['operation_name'] == 'update':
+                    requests.put(url, json=data)
+                elif primary_log[seq_num]['operation_name'] == 'write':
+                    requests.post(url, json=data)
+                elif primary_log[seq_num]['operation_name'] == 'del':
+                    requests.delete(url, json=data)
+                log[seq_num]['is_committed'] = 1
+            
     logfile_write = open(server+'.json','w')
     json.dump(log,logfile_write)
     logfile_write.close()
@@ -66,8 +89,12 @@ def replicate_log(server):
 @app.route('/init', methods=['POST'])
 def init():
     payload = request.get_json()
-    n = payload.get('N')
-    schema = payload.get('schema')
+    n = payload.get('n')
+
+    new_shards = payload.get('new_shards')
+    for shard in new_shards:
+        all_servers[shard] = []
+        elect_primary(shard)
     # code for server creation to be added
     shards = payload.get('shards')
     data = {}
@@ -75,7 +102,7 @@ def init():
 
 @app.route('/add', methods=['POST'])
 def add():
-    pass
+    payload = request.get_json()
 
 @app.route('/rm', methods=['POST'])
 def rm():
