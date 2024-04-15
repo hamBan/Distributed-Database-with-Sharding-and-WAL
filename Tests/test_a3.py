@@ -246,12 +246,18 @@ def test_a1():
         "Stud_id": {"low": 0, "high": 10000}
     }
 
-    # Measure write speed
-    write_time = measure_write_speed(load_balancer_url_write, payload_write)
+    # Measure write speed by making async requests
+    start_time = time.time()
+    asyncio.run(measure_write_speed_async())
+    end_time = time.time()
+    write_time = end_time - start_time
     print(f"Time taken for 10,000 writes: {write_time} seconds")
 
-    # Measure read speed
-    read_time = measure_read_speed(load_balancer_url_read, payload_read)
+    # Measure read speed by making async requests
+    start_time = time.time()
+    asyncio.run(measure_read_speed_async())
+    end_time = time.time()
+    read_time = end_time - start_time
     print(f"Time taken for 10,000 reads: {read_time} seconds")
 
 # Run the test
