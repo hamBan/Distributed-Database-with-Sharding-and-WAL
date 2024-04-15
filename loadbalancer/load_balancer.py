@@ -129,7 +129,8 @@ def initialize_database():
         server_schema = data.get('schema')
         shards = data.get('shards')
         servers = data.get('servers')
-
+        sm_payload =  {}
+        servers__ = {}
 
         # Update the current_configuration for status endpoint
         current_configuration['N']+=int(N)
@@ -147,24 +148,10 @@ def initialize_database():
             if '$' in k : 
                 name = f"Server{random_server_id}"
             # TODO after spawning is implemented by Soham
-            helper.createServer(random_server_id, name, get_random_ports())
+            servers__[name]  = v 
             server_id_to_name[random_server_id] = name
             server_name_to_id[name] = random_server_id
             
-            while True:
-                try : 
-                    response = requests.post(f"{get_server_url(name)}config", json={
-                        'schema': server_schema,
-                        'shards': v
-                    })
-                    if response.status_code == 200 :
-                        print(f"Successfully created Server : {name}")
-                        print(response.text)
-                        break
-                except Exception as e:
-                    time.sleep(30)
-                    continue
-
             for shard_id in v:
                 if shard_id not in shard_hash_maps :
                     shard_hash_maps[shard_id] = ConsistentHashmapImpl([], virtualServers, slotsInHashMap)
@@ -172,7 +159,16 @@ def initialize_database():
                 if name not in server_shard_mapping : 
                     server_shard_mapping[name] = []
                 server_shard_mapping[name].append(shard_id)
-        
+
+        sm_payload = { 
+            "N" : N, 
+            "schema" : server_schema, 
+            "shard" : shards, 
+            "servers" : servers__
+        } 
+        response = requests.get(f"{SHARD_MANAGER_URL}init", sm_payload).json()
+        if response.status_code != 200: 
+            return {"message" : "Cannot config"}, 400
     except Exception as e : 
         message = e
         status = "Unsuccessful"
@@ -198,6 +194,12 @@ def add_servers():
         shards = data.get('new_shards')
         servers = data.get('servers')
         message = "Added "
+        servers__= {}
+
+        sm_payload = {
+            "n" : N,
+            "new_shards" : shards
+        }
         
         if len(servers) < N or N < 0 :  
             return {"message": f"Number of new servers {N} is greater than newly added instances", 
@@ -220,25 +222,10 @@ def add_servers():
                 name = f"Server{random_server_id}"
             message+=f"{name} "
             # TODO after spawning is implemented by Soham
-            helper.createServer(random_server_id, name, get_random_ports())
+            servers__[name]  = v 
             server_id_to_name[random_server_id] = name
             server_name_to_id[name] = random_server_id
             
-            while True:
-                try : 
-                    response = requests.post(f"{get_server_url(name)}config", json={
-                        'schema': server_schema,
-                        'shards': v
-                    })
-                    if response.status_code == 200 :
-                        print(f"Successfully created Server : {name}")
-                        print(response.text)
-                        break
-                except Exception as e:
-                    print(e)
-                    time.sleep(30)
-                    continue
-
             for shard_id in v:
                 if shard_id not in shard_hash_maps : 
                     shard_hash_maps[shard_id] = ConsistentHashmapImpl([], virtualServers, slotsInHashMap)
@@ -246,7 +233,11 @@ def add_servers():
                 if name not in server_shard_mapping : 
                     server_shard_mapping[name] = []
                 server_shard_mapping[name].append(shard_id)
-
+        
+        sm_payload["servers"] = servers__
+        response = requests.get(f"{SHARD_MANAGER_URL}add", sm_payload).json()
+        if response.status_code != 200: 
+            return {"message" : "Cannot config"}, 400
         response_message = {
             "message" : message.strip(),
             "status" : "successful"
@@ -263,7 +254,10 @@ def remove():
         data = request.json  
         N = data.get('n')
         servers = data.get('servers')
-
+        server__ = []
+        sm_payload = {
+            "n" : N 
+        }
         # Sanity Checks 
         if len(servers) > N or N >= len(server_name_to_id): 
             return jsonify({"message" : "Length of server list is more than removable instances",
@@ -276,11 +270,13 @@ def remove():
         
         # Server Removal 
         # TODO after spawning is implemented by Soham
+        server__ = []
         for server in servers : 
             for shard_id in server_shard_mapping[server] : 
                 shard_hash_maps[shard_id].removeServer(server_name_to_id[server], server)
             del server_shard_mapping[server]
             del server_name_to_id[server]
+            server__.append(server)
             N-=1
 
         while N != 0: 
@@ -289,10 +285,15 @@ def remove():
                 shard_hash_maps[shard_id].removeServer(server_name_to_id[random_server], random_server)
             del server_shard_mapping[random_server]
             del server_name_to_id[random_server]
+            server__.append(random_server)
             N-=1
+        sm_payload["servers"] = server__
+        response = requests.get(f"{SHARD_MANAGER_URL}rm", sm_payload).json()
+        if response.status_code != 200: 
+            return {"message" : "Cannot config"}, 400
         update_configuration()
         return jsonify({'message': 'Removal successful'}), 200
-    except Exception as e : 
+    except Exception as e :
         print(e)
         return jsonify({'message': 'Removal Unsuccessful'}), 400
         
