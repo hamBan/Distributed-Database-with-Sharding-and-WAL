@@ -1,15 +1,19 @@
 from flask import Flask,jsonify,request
 import json
+import time
 import os
 import requests
 import socket
 import sqlite3
+import threading
 
 app = Flask(__name__)
 
 all_shards = {} # Format : {server name : [shard list]}
 all_servers = {} # Format : {shard : [server list]}
 primary_servers = {} # Format : {shard : primary server}
+database_schema = None # To store the schema when init is called 
+
 
 def elect_primary(shard):
     max_seq = 0
@@ -88,31 +92,111 @@ def replicate_log(server):
 
 @app.route('/init', methods=['GET'])
 def init():
+    host_ip = socket.gethostbyname('host.docker.internal')
+    url = f'http://{host_ip}:7000/spawn'
     payload = request.get_json()
-    
-    shards = payload.get('shards')
+    global database_schema
+    N = payload.get('N')
+    database_schema = payload.get("schema")
+    shards = payload.get("shards")
+    servers = payload.get("servers")
+
+    for shard in shards:
+        all_servers[shard] = []
+
+    # Create the servers first 
+    for server_name, shard_list in servers.items(): 
+        data = {
+            'servers' : [server_name]
+        }
+        response = requests.post(url, json=data)
+        server_url = f"http://{server_name}:5000/config"
+        data = {
+            "schema" : database_schema, 
+            "shards" : shard_list
+        }
+        # Wait for the database to be configured 
+        while True :
+            try : 
+                response = request.post(server_url, json = data)
+                if response.status_code == 200 :
+                    break
+            except Exception as e :
+                time.sleep(30)
+        if server_name not in all_shards : 
+            all_shards[server_name] = []
+        all_shards[server_name].extend(shard_list)
+        for shard_id in shard_list : 
+            all_servers[shard_id].append(server_name)
+
+    for shard in shards: 
+        elect_primary(shard)
     return {},200
 
 @app.route('/add', methods=['GET'])
 def add():
     payload = request.get_json()
     n = payload['n']
-
     new_shards = payload.get('new_shards')
+    new_servers = payload.get('servers')
+
+    host_ip = socket.gethostbyname('host.docker.internal')
+    url = f'http://{host_ip}:7000/spawn'
+
+
     for shard in new_shards:
         all_servers[shard] = []
-        elect_primary(shard)
+        # We do not need to elect leader when adding new server 
+        # TODO 
+        # elect_primary(shard)
+
+    for server_name, shard_list in new_servers.items(): 
+        data = {
+            'servers' : [server_name]
+        }
+        response = requests.post(url, json=data)
+        server_url = f"http://{server_name}:5000/config"
+        data = {
+            "schema" : database_schema, 
+            "shards" : shard_list
+        }
+
+        # Wait for the database to be configured 
+        while True :
+            try : 
+                response = request.post(server_url, json = data)
+                if response.status_code == 200 :
+                    break
+            except Exception as e :
+                time.sleep(30)
+        if server_name not in all_shards : 
+            all_shards[server_name] = []
+        all_shards[server_name].extend(shard_list)
+        for shard_id in shard_list : 
+            all_servers[shard_id].append(server_name)
+
     return {},200
 
 @app.route('/rm', methods=['GET'])
 def rm():
     payload = request.get_json()
+    deleted_servers = payload.get("servers")
     try:
         host_ip = socket.gethostbyname('host.docker.internal')
         url = f'http://{host_ip}:7000/remove'
         data = payload
         response = requests.post(url, json=data)
         print('Remove request successful:', response.text)
+        for shard_id, primary_server in primary_servers.items() : 
+            if primary_server in deleted_servers : 
+                elect_primary(shard_id)
+
+            for server_name in deleted_servers : 
+                try : 
+                    all_servers[shard_id].remove(server_name)
+                except Exception as e: 
+                    pass
+                del all_shards[server_name]
         response.raise_for_status()
         status = 200
     except requests.exceptions.RequestException as e:
@@ -123,3 +207,32 @@ def rm():
 @app.route('/get_primary', methods=['POST'])
 def get_primary():
     return primary_servers
+
+# Health checkup portion --------------------------------------------------------------------------------------------------
+
+def check_server_health(server_url):
+    try:
+        response = requests.get(f"{server_url}heartbeat", timeout=2)
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
+def health_check():
+    try:
+        while True:
+            time.sleep(5)
+            servers_copy = dict(all_shards)
+            for server_name, shard_list in servers_copy.items():
+                if not check_server_health(f"http://{server_name}:5000/"):
+                    print(f"Server : {server_name} is down. Removing from the pool.")
+                    # TODO
+
+
+            time.sleep(5)
+    except Exception as e:
+        print(e)
+
+def start_health_check_thread():
+    health_check_thread = threading.Thread(target=health_check)
+    health_check_thread.daemon = True
+    health_check_thread.start()
