@@ -4,13 +4,21 @@ import os
 app = Flask(__name__)
 
 @app.route('/spawn', methods = ['POST'])
-def home():
+def spawn():
     payload = request.get_json()
-    n = payload.get('n')
-    hostnames = payload.get('hostnames', [])
-    print(n,hostnames)
-    home_message =  {'n': '100'}
-    return home_message, 200
+    servers = payload['servers']
+    for server in servers:
+        os.system(f'docker run --name {server}_db database') # incomplete
+        os.system(f'docker run --name {server} server') # incomplete
+    return {},200
+
+@app.route('/remove', methods = ['POST'])
+def remove():
+    payload = request.get_json()
+    servers = payload['servers']
+    for server in servers:
+        os.system(f'docker rm {server}_db') # incomplete
+        os.system(f'docker rm {server}') # incomplete
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 7000))

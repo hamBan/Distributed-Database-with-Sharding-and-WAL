@@ -86,27 +86,39 @@ def replicate_log(server):
     json.dump(log,logfile_write)
     logfile_write.close()
 
-@app.route('/init', methods=['POST'])
+@app.route('/init', methods=['GET'])
 def init():
     payload = request.get_json()
-    n = payload.get('n')
+    
+    shards = payload.get('shards')
+    return {},200
+
+@app.route('/add', methods=['GET'])
+def add():
+    payload = request.get_json()
+    n = payload['n']
 
     new_shards = payload.get('new_shards')
     for shard in new_shards:
         all_servers[shard] = []
         elect_primary(shard)
-    # code for server creation to be added
-    shards = payload.get('shards')
-    data = {}
-    return jsonify(data),200
+    return {},200
 
-@app.route('/add', methods=['POST'])
-def add():
-    payload = request.get_json()
-
-@app.route('/rm', methods=['POST'])
+@app.route('/rm', methods=['GET'])
 def rm():
-    pass
+    payload = request.get_json()
+    try:
+        host_ip = socket.gethostbyname('host.docker.internal')
+        url = f'http://{host_ip}:7000/remove'
+        data = payload
+        response = requests.post(url, json=data)
+        print('Remove request successful:', response.text)
+        response.raise_for_status()
+        status = 200
+    except requests.exceptions.RequestException as e:
+        data = {'message':f'Add failed with error : {e}'}
+        status = 500
+    return {},status
 
 @app.route('/get_primary', methods=['POST'])
 def get_primary():
