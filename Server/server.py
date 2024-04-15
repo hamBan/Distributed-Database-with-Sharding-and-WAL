@@ -22,7 +22,7 @@ app = Flask(__name__)
 # Log operations
 LOG_OPERATION_WRITE = "write"
 LOG_OPERATION_UPDATE = "update"
-LOG_OPERATION_DELETE = "delete"
+LOG_OPERATION_DELETE = "del"
 
 # Environment Variables to cnnect to database. If not present, use the default values
 DATABASE_USER = os.environ.get('MYSQL_USER', 'root')
@@ -251,27 +251,26 @@ def assignLogIdAndFileName():
         logId = 0
 
 # Function to write the log
-def writeLog(operationName, log):
-    # Add the log to the volume storage named 'persistentStorageMedia'. Use file <container_name>.log
-    global logId
-
+def writeLog(operationName, log, log_id, shard_id, is_commited):
     # make logId as key, operationName and log as values
     dataToWrite = {}
     
-    dataToWrite[logId] = {"operationName": operationName, "log": log}
+    dataToWrite[log_id] = {"operationName": operationName, "log": log, "shard_id" : shard_id, "is_commited" : is_commited}
 
-    # Append the log to existing logs
     if os.path.exists(VOLUME_PATH + serverFileName):
         with open(VOLUME_PATH + serverFileName, 'r') as f:
             data = json.load(f)
-            data.update(dataToWrite)
+            # Check if logId exists in the data
+            if log_id in data:
+                # Update the existing entry
+                data[log_id].update(dataToWrite[log_id])
+            else:
+                # Add a new entry
+                data.update(dataToWrite)
     else:
         data = dataToWrite
-
     with open(VOLUME_PATH + serverFileName, 'w') as f:
         json.dump(data, f)
-
-    logId += 1
 
 # Function to return the logs
 @app.route('/getLogs', methods = ['GET'])
@@ -326,7 +325,9 @@ def writeData(shard, curr_idx, data):
 
 # Replicate write if server primary else just store the data
 # Assume 'server1' is primary and 'server2' and 'server3' are replicas
-# json payload: {"shard": "Shard1", "curr_idx": 0, 
+# json payload: { "shard": "Shard1", 
+#                 "curr_idx": 0,
+#                 "log_id" : 0, 
 #                 "data": [{"Stud_id": 1, "Stud_name": "Abc", "Stud_marks": 10}],
 #                 "isPrimary": true,
 #                 "otherServers": ["server2", "server3"]}
@@ -346,16 +347,18 @@ def writeRAFT():
         shard = payload.get('shard')
         curr_idx = int(payload.get('curr_idx'))
         data = payload.get('data')
+        log_id = payload.get('log_id')
         isPrimary = payload.get('isPrimary')
         otherServers = payload.get('otherServers')
 
         if isPrimary:
             # write to log and replicate to other servers
-            writeLog(LOG_OPERATION_WRITE, payload)
+            writeLog(LOG_OPERATION_WRITE, payload, log_id, shard, 0)
 
             # request for other servers
             requestToReplica = {"shard": shard, 
-                        "curr_idx": curr_idx, 
+                        "curr_idx": curr_idx,
+                        "log_id" : log_id,
                         "data": data, 
                         "isPrimary": False, 
                         "otherServers": []}
@@ -376,7 +379,7 @@ def writeRAFT():
         else:
             # If not primary.
             # write to log
-            writeLog(LOG_OPERATION_WRITE, payload)
+            writeLog(LOG_OPERATION_WRITE, payload, log_id, shard, 0)
             # writing to the database
             entriesAdded, duplicate = writeData(shard, curr_idx, data)
 
@@ -393,6 +396,7 @@ def writeRAFT():
 
                 message["status"] = "success"
                 statusCode = 200
+                writeLog(LOG_OPERATION_WRITE, payload, log_id, shard, 1)
             else:
                 message["message"] = "Data entries not added. Not replicated to majority of servers"
                 message["status"] = "Unsuccessfull"
@@ -402,6 +406,7 @@ def writeRAFT():
                 message["message"] = "Data entries added"
                 message["status"] = "success"
                 statusCode = 200
+                writeLog(LOG_OPERATION_WRITE, payload, log_id, shard, 1)
     except Exception as e:
         message = {"message": "Error: " + str(e), "status": "Unsuccessfull"}
         statusCode = 400
@@ -524,6 +529,7 @@ def isIdExists(shard, Stud_id):
 # Assume 'server1' is primary and 'server2' and 'server3' are replicas
 # Json= {"shard":"sh2",
 #       "Stud_id":2255,
+#       "log_id" : 0, 
 #       "data": {"Stud_id":2255,"Stud_name":GHI,"Stud_marks":28},
 #       "isPrimary":true,
 #       "otherServers":["server2","server3"]
@@ -542,6 +548,7 @@ def updateRAFT():
         payload = request.get_json()
         shard = payload.get('shard')
         Stud_id = int(payload.get('Stud_id'))
+        log_id = payload.get('log_id')
         entry = payload.get('data')
         isPrimary = payload.get('isPrimary')
         otherServers = payload.get('otherServers')
@@ -553,11 +560,12 @@ def updateRAFT():
         else:
             if isPrimary:
                 # write to log and replicate to other servers
-                writeLog(LOG_OPERATION_UPDATE, payload)
+                writeLog(LOG_OPERATION_UPDATE, payload, log_id, shard, 0)
 
                 # request for other servers
                 requestToReplica = {"shard": shard, 
                             "Stud_id": Stud_id, 
+                            "log_id" : log_id,
                             "data": entry, 
                             "isPrimary": False, 
                             "otherServers": []}
@@ -578,7 +586,7 @@ def updateRAFT():
             else:
                 # If not primary.
                 # write to log
-                writeLog(LOG_OPERATION_UPDATE, payload)
+                writeLog(LOG_OPERATION_UPDATE, payload, log_id, shard, 0)
                 # writing to the database
                 updated = updateData(shard, Stud_id, entry)
 
@@ -589,6 +597,7 @@ def updateRAFT():
                         message["message"] = "Data entry for Stud_id:" + str(Stud_id) + " updated"
                         message["status"] = "success"
                         statusCode = 200
+                        writeLog(LOG_OPERATION_UPDATE, payload, log_id, shard, 1)
                     else:
                         message["message"] = "Error updating data entry"
                         message["status"] = "Unsuccessfull"
@@ -602,6 +611,7 @@ def updateRAFT():
                     message["message"] = "Data entry for Stud_id:" + str(Stud_id) + " updated"
                     message["status"] = "success"
                     statusCode = 200
+                    writeLog(LOG_OPERATION_UPDATE, payload, log_id, shard, 1)
     except Exception as e:
         message = {"message": "Error: " + str(e), "status": "Unsuccessfull"}
         statusCode = 400
@@ -675,6 +685,7 @@ def deleteRAFT():
         payload = request.get_json()
         shard = payload.get('shard')
         Stud_id = int(payload.get('Stud_id'))
+        log_id = payload.get('log_id')
         isPrimary = payload.get('isPrimary')
         otherServers = payload.get('otherServers')
 
@@ -685,11 +696,12 @@ def deleteRAFT():
         else:
             if isPrimary:
                 # write to log and replicate to other servers
-                writeLog(LOG_OPERATION_DELETE, payload)
+                writeLog(LOG_OPERATION_DELETE, payload, log_id, shard, 0)
 
                 # request for other servers
                 requestToReplica = {"shard": shard, 
                             "Stud_id": Stud_id, 
+                            "log_id" : log_id,
                             "isPrimary": False, 
                             "otherServers": []}
                 
@@ -709,7 +721,7 @@ def deleteRAFT():
             else:
                 # If not primary.
                 # write to log
-                writeLog(LOG_OPERATION_DELETE, payload)
+                writeLog(LOG_OPERATION_DELETE, payload, log_id, shard, 0)
                 # writing to the database
                 deleted = deleteData(shard, Stud_id)
 
@@ -720,6 +732,7 @@ def deleteRAFT():
                         message["message"] = "Data entry for Stud_id:" + str(Stud_id) + " removed"
                         message["status"] = "success"
                         statusCode = 200
+                        writeLog(LOG_OPERATION_DELETE, payload, log_id, shard, 1)
                     else:
                         message["message"] = "Error deleting data entry"
                         message["status"] = "Unsuccessfull"
@@ -733,6 +746,7 @@ def deleteRAFT():
                     message["message"] = "Data entry for Stud_id:" + str(Stud_id) + " removed"
                     message["status"] = "success"
                     statusCode = 200
+                    writeLog(LOG_OPERATION_DELETE, payload, log_id, shard, 1)
     except Exception as e:
         message = {"message": "Error: " + str(e), "status": "Unsuccessfull"}
         statusCode = 400
