@@ -12,7 +12,7 @@ from ConsistentHashmap import ConsistentHashmapImpl
 app = Flask(__name__)
 
 replicas = []
-
+log_id = 0 
 N = 3
 serverName = []
 virtualServers = 9
@@ -38,6 +38,9 @@ server_id_to_name = {}
 server_name_to_id = {}
 shard_locks = {}
 ports = {}
+log_lock =  threading.Lock()
+# TODO SOHAM 
+SHARD_MANAGER_URL = ""
 # Log operations
 LOG_OPERATION_WRITE = "write"
 LOG_OPERATION_UPDATE = "update"
@@ -92,6 +95,14 @@ def get_shard_id_from_stud_id(id):
             return shardId, int(info['Stud_id_low']) + int(info['Shard_size'])
     return None, None
 
+def update_configuration():
+    global current_configuration
+    response = requests.get(f"{SHARD_MANAGER_URL}get_primary").json()
+    for i in current_configuration['shards'] : 
+        i['primary_server'] = response.get(i['Shard_id'])
+
+
+
 current_configuration = {
     "N" : 0, 
     "schema" : {}, 
@@ -135,6 +146,7 @@ def initialize_database():
             name = k 
             if '$' in k : 
                 name = f"Server{random_server_id}"
+            # TODO after spawning is implemented by Soham
             helper.createServer(random_server_id, name, get_random_ports())
             server_id_to_name[random_server_id] = name
             server_name_to_id[name] = random_server_id
@@ -169,14 +181,12 @@ def initialize_database():
         "message": message,
         "status": status
     }
+    update_configuration()
     return jsonify(response_json), 200
 
 @app.route('/status', methods=['GET'])
 def get_status():
-    with open(VOLUME_PATH + "primary_server.json", 'r') as f:
-        data = json.load(f)  
-    for i in current_configuration['shards'] : 
-        i['primary_server'] = data.get(i['Shard_id'])
+    update_configuration()
     return jsonify(current_configuration), 200
 
 @app.route('/add', methods=['POST'])
@@ -209,6 +219,7 @@ def add_servers():
             if '$' in k : 
                 name = f"Server{random_server_id}"
             message+=f"{name} "
+            # TODO after spawning is implemented by Soham
             helper.createServer(random_server_id, name, get_random_ports())
             server_id_to_name[random_server_id] = name
             server_name_to_id[name] = random_server_id
@@ -240,6 +251,7 @@ def add_servers():
             "message" : message.strip(),
             "status" : "successful"
         }
+        update_configuration()
         return jsonify(response_message), 200
     except Exception as e : 
         print(e) 
@@ -263,6 +275,7 @@ def remove():
                             "status" : "failure"}), 400
         
         # Server Removal 
+        # TODO after spawning is implemented by Soham
         for server in servers : 
             for shard_id in server_shard_mapping[server] : 
                 shard_hash_maps[shard_id].removeServer(server_name_to_id[server], server)
@@ -277,7 +290,7 @@ def remove():
             del server_shard_mapping[random_server]
             del server_name_to_id[random_server]
             N-=1
-        
+        update_configuration()
         return jsonify({'message': 'Removal successful'}), 200
     except Exception as e : 
         print(e)
@@ -330,6 +343,7 @@ def read():
 def write():
     try : 
         global shard_locks
+        update_configuration()
         data_entries = request.json.get('data', [])
         shard_queries = {}
         entries_added = 0
@@ -353,8 +367,19 @@ def write():
                 tried = 0 
                 for serverName in server_list :
                     load_balancer_url = f"{get_server_url(serverName)}writeRAFT"
+                    current_log_id = 0
+                    # Lock required  
+                    global log_id
+                    global log_lock
+                    log_lock.acquire()
+                    current_log_id = log_id
+                    log_id+=1
+                    # Release Log
+                    log_lock.release()
+
                     payload = {
                         'shard': shard_id, 'curr_idx': curr_idx, "data" : entry, 
+                        "log_id" : current_log_id,
                         "isPrimary": True,
                         "otherServers": [i for i in shard_hash_maps[shard_id].getServers() if i not in server_list]
                     }
@@ -381,6 +406,7 @@ def write():
 @app.route('/update', methods=['PUT'])
 def update():
     try : 
+        update_configuration()
         data_entry = request.json.get('data', {})
         stud_id = request.json.get('Stud_id')
         shard_id, end_id = get_shard_id_from_stud_id(int(stud_id))
@@ -397,8 +423,18 @@ def update():
                     if code == 400 :
                         break
                     load_balancer_url = f"{get_server_url(serverName)}updateRAFT"
+                    current_log_id = 0
+                    # Lock required  
+                    global log_id
+                    global log_lock
+                    log_lock.acquire()
+                    current_log_id = log_id
+                    log_id+=1
+                    # Release Log
+                    log_lock.release()
                     payload = {
                         'shard': shard_id, 'Stud_id': stud_id, "data" : data_entry,
+                        "log_id" : current_log_id,
                         "isPrimary": True,
                         "otherServers": [i for i in shard_hash_maps[shard_id].getServers() if i not in server_list]
                     }
@@ -423,6 +459,7 @@ def update():
 @app.route('/del', methods=['DELETE'])
 def delete():
     try : 
+        update_configuration()
         stud_id = request.json.get('Stud_id')
         shard_id, end_id = get_shard_id_from_stud_id(int(stud_id))
         if shard_id is not None : 
@@ -438,8 +475,18 @@ def delete():
                     if code == 400 :
                         break
                     load_balancer_url = f"{get_server_url(serverName)}delRAFT"
+                    current_log_id = 0
+                    # Lock required  
+                    global log_id
+                    global log_lock
+                    log_lock.acquire()
+                    current_log_id = log_id
+                    log_id+=1
+                    # Release Log
+                    log_lock.release()
                     payload = {
                         'shard': shard_id, 'Stud_id': stud_id ,
+                        "log_id" : current_log_id,
                         "isPrimary": True,
                         "otherServers": [i for i in shard_hash_maps[shard_id].getServers() if i not in server_list]
                     }
