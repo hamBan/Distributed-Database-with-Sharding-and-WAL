@@ -40,7 +40,7 @@ shard_locks = {}
 ports = {}
 log_lock =  threading.Lock()
 # TODO SOHAM 
-SHARD_MANAGER_URL = ""
+SHARD_MANAGER_URL = "http://shard_manager:5000/"
 # Log operations
 LOG_OPERATION_WRITE = "write"
 LOG_OPERATION_UPDATE = "update"
