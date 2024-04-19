@@ -41,7 +41,7 @@ def update_log(server):
             if log[seq_num]['shard_id'] == shard and seq_num > max_seq_present:
                 max_seq_present = seq_num
             elif log[seq_num]['shard_id'] == shard and log[seq_num]['is_committed'] == 0:
-                url = f'http://{server}:5000/{primary_log[seq_num]['operation_name']}'
+                url = f"http://{server}:5000/{primary_log[seq_num]['operation_name']}"
                 data = primary_log[seq_num]['operation_name']
                 if primary_log[seq_num]['operation_name'] == 'update':
                     requests.put(url, json=data)
@@ -54,7 +54,7 @@ def update_log(server):
         for seq_num in primary_log:
             if primary_log[seq_num]['shard_id'] == shard and seq_num > max_seq_present:
                 log[seq_num] = primary_log[seq_num]
-                url = f'http://{server}:5000/{primary_log[seq_num]['operation_name']}'
+                url = f"http://{server}:5000/{primary_log[seq_num]['operation_name']}"
                 data = primary_log[seq_num]['operation_name']
                 if primary_log[seq_num]['operation_name'] == 'update':
                     requests.put(url, json=data)
@@ -76,7 +76,7 @@ def replicate_log(server):
         for seq_num in primary_log:
             if primary_log[seq_num]['shard_id'] == shard:
                 log[seq_num] = primary_log[seq_num]
-                url = f'http://{server}:5000/{primary_log[seq_num]['operation_name']}'
+                url = f"http://{server}:5000/{primary_log[seq_num]['operation_name']}"
                 data = primary_log[seq_num]['operation_name']
                 if primary_log[seq_num]['operation_name'] == 'update':
                     requests.put(url, json=data)
@@ -208,34 +208,44 @@ def rm():
 def get_primary():
     return primary_servers
 
+# Server endpoint for requests at http://localhost:5000/home, methond=GET
+@app.route('/home', methods = ['GET'])
+def home():
+    # Dictionary to return as a JSON object
+    serverHomeMessage =  {"message": "Hello from Shard Manager",
+                          "status": "successfull"}
+    # Returning the JSON object along with the status code 200
+    return serverHomeMessage, 200
+
+
 # Health checkup portion --------------------------------------------------------------------------------------------------
 
-def check_server_health(server_url):
-    try:
-        response = requests.get(f"{server_url}heartbeat", timeout=2)
-        return response.status_code == 200
-    except requests.exceptions.RequestException:
-        return False
+# def check_server_health(server_url):
+#     try:
+#         response = requests.get(f"{server_url}heartbeat", timeout=2)
+#         return response.status_code == 200
+#     except requests.exceptions.RequestException:
+#         return False
 
-def health_check():
-    try:
-        while True:
-            time.sleep(5)
-            servers_copy = dict(all_shards)
-            for server_name, shard_list in servers_copy.items():
-                if not check_server_health(f"http://{server_name}:5000/"):
-                    print(f"Server : {server_name} is down. Removing from the pool.")
-                    # TODO
+# def health_check():
+#     try:
+#         while True:
+#             time.sleep(5)
+#             servers_copy = dict(all_shards)
+#             for server_name, shard_list in servers_copy.items():
+#                 if not check_server_health(f"http://{server_name}:5000/"):
+#                     print(f"Server : {server_name} is down. Removing from the pool.")
+#                     # TODO
 
 
-            time.sleep(5)
-    except Exception as e:
-        print(e)
+#             time.sleep(5)
+#     except Exception as e:
+#         print(e)
 
-def start_health_check_thread():
-    health_check_thread = threading.Thread(target=health_check)
-    health_check_thread.daemon = True
-    health_check_thread.start()
+# def start_health_check_thread():
+#     health_check_thread = threading.Thread(target=health_check)
+#     health_check_thread.daemon = True
+#     health_check_thread.start()
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 6000))

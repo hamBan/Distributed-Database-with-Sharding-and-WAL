@@ -40,7 +40,7 @@ shard_locks = {}
 ports = {}
 log_lock =  threading.Lock()
 # TODO SOHAM 
-SHARD_MANAGER_URL = "http://shard_manager:5000/"
+SHARD_MANAGER_URL = "http://shard_manager:6000/"
 # Log operations
 LOG_OPERATION_WRITE = "write"
 LOG_OPERATION_UPDATE = "update"
@@ -110,6 +110,14 @@ current_configuration = {
     "servers" : {}
 }
 
+@app.route('/home', methods = ['GET'])
+def home():
+    response = requests.get(f"{SHARD_MANAGER_URL}home").json()
+    # Dictionary to return as a JSON object
+    serverHomeMessage =  {"message": f"{response.get('message')}",
+                          "status": "successfull"}
+    # Returning the JSON object along with the status code 200
+    return serverHomeMessage, 200
 
 @app.route('/init', methods=['POST'])
 def initialize_database():
