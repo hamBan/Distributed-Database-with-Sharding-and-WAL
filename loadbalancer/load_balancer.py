@@ -97,7 +97,7 @@ def get_shard_id_from_stud_id(id):
 
 def update_configuration():
     global current_configuration
-    response = requests.get(f"{SHARD_MANAGER_URL}get_primary").json()
+    response = requests.post(f"{SHARD_MANAGER_URL}get_primary").json()
     for i in current_configuration['shards'] : 
         i['primary_server'] = response.get(i['Shard_id'])
 
@@ -171,10 +171,11 @@ def initialize_database():
         sm_payload = { 
             "N" : N, 
             "schema" : server_schema, 
-            "shard" : shards, 
+            "shards" : shards, 
             "servers" : servers__
-        } 
-        response = requests.get(f"{SHARD_MANAGER_URL}init", sm_payload).json()
+        }
+        # print(sm_payload)
+        response = requests.get(f"{SHARD_MANAGER_URL}init", json = sm_payload).json()
         if response.status_code != 200: 
             return {"message" : "Cannot config"}, 400
     except Exception as e : 

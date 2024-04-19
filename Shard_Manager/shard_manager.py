@@ -92,45 +92,50 @@ def replicate_log(server):
 
 @app.route('/init', methods=['GET'])
 def init():
-    host_ip = socket.gethostbyname('host.docker.internal')
-    url = f'http://{host_ip}:7000/spawn'
-    payload = request.get_json()
-    global database_schema
-    N = payload.get('N')
-    database_schema = payload.get("schema")
-    shards = payload.get("shards")
-    servers = payload.get("servers")
+    # host_ip = socket.gethostbyname('host.docker.internal')
+    try :
+        host_ip = "172.17.0.1"
+        url = f'http://{host_ip}:9000/spawn'
+        payload = request.get_json()
+        global database_schema
+        N = payload.get('N')
+        database_schema = payload.get("schema")
+        shards = payload.get("shards")
+        servers = payload.get("servers")
 
-    for shard in shards:
-        all_servers[shard] = []
+        for shard in shards:
+            all_servers[shard["Shard_id"]] = []
 
-    # Create the servers first 
-    for server_name, shard_list in servers.items(): 
-        data = {
-            'servers' : [server_name]
-        }
-        response = requests.post(url, json=data)
-        server_url = f"http://{server_name}:5000/config"
-        data = {
-            "schema" : database_schema, 
-            "shards" : shard_list
-        }
-        # Wait for the database to be configured 
-        while True :
-            try : 
-                response = request.post(server_url, json = data)
-                if response.status_code == 200 :
-                    break
-            except Exception as e :
-                time.sleep(30)
-        if server_name not in all_shards : 
-            all_shards[server_name] = []
-        all_shards[server_name].extend(shard_list)
-        for shard_id in shard_list : 
-            all_servers[shard_id].append(server_name)
+        # Create the servers first 
+        for server_name, shard_list in servers.items(): 
+            data = {
+                'servers' : [server_name]
+            }
+            response = requests.post(url, json=data)
+            server_url = f"http://{server_name}:5000/config"
+            data = {
+                "schema" : database_schema, 
+                "shards" : shard_list
+            }
+            # Wait for the database to be configured 
+            while True :
+                try : 
+                    response = request.post(server_url, json = data)
+                    if response.status_code == 200 :
+                        print("Server Spawn Success")
+                        break
+                except Exception as e :
+                    time.sleep(30)
+            if server_name not in all_shards : 
+                all_shards[server_name] = []
+            all_shards[server_name].extend(shard_list)
+            for shard_id in shard_list : 
+                all_servers[shard_id].append(server_name)
 
-    for shard in shards: 
-        elect_primary(shard)
+        for shard in shards: 
+            elect_primary(shard)
+    except Exception as e :
+        print(f"------------------\n{e}")
     return {},200
 
 @app.route('/add', methods=['GET'])
@@ -140,8 +145,9 @@ def add():
     new_shards = payload.get('new_shards')
     new_servers = payload.get('servers')
 
-    host_ip = socket.gethostbyname('host.docker.internal')
-    url = f'http://{host_ip}:7000/spawn'
+    # host_ip = socket.gethostbyname('host.docker.internal')
+    host_ip = "172.17.0.1"
+    url = f'http://{host_ip}:9000/spawn'
 
 
     for shard in new_shards:
@@ -182,8 +188,9 @@ def rm():
     payload = request.get_json()
     deleted_servers = payload.get("servers")
     try:
-        host_ip = socket.gethostbyname('host.docker.internal')
-        url = f'http://{host_ip}:7000/remove'
+        # host_ip = socket.gethostbyname('host.docker.internal')
+        host_ip = "172.17.0.1"
+        url = f'http://{host_ip}:9000/remove'
         data = payload
         response = requests.post(url, json=data)
         print('Remove request successful:', response.text)
