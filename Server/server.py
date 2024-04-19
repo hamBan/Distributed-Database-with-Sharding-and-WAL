@@ -103,7 +103,6 @@ def config():
         message["message"] = ""
         isError = False
         # Server ID taking from the environment variable named SERVER_ID
-        serverID = os.environ.get('SERVER_ID')
         serverName = DATABASE_HOST
 
         if schema is None or shards is None:

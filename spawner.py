@@ -8,8 +8,8 @@ def spawn():
     payload = request.get_json()
     servers = payload['servers']
     for server in servers:
-        os.system(f'docker run --name {server}_db database') # incomplete
-        os.system(f'docker run --name {server} server') # incomplete
+        os.system(f'docker run -d --name {server}_db database')
+        os.system(f'docker run -d -e "MYSQL_HOST={server}_db" --network my_network --name {server} server')
     return {},200
 
 @app.route('/remove', methods = ['POST'])
