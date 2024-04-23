@@ -103,7 +103,7 @@ def config():
         message["message"] = ""
         isError = False
         # Server ID taking from the environment variable named SERVER_ID
-        serverID = os.environ.get('SERVER_ID')
+        # serverID = os.environ.get('SERVER_ID')
         serverName = DATABASE_HOST
 
         if schema is None or shards is None:
@@ -149,6 +149,7 @@ def config():
         statusCode = 400
 
         # Returning the error message along with the status code 400
+    print(message,statusCode)
     return message, statusCode
 
 def executeAndReturn(query):
@@ -242,6 +243,7 @@ def assignLogIdAndFileName():
 
     if serverFileName is None:
         serverFileName = os.environ.get('SERVER_NAME') + '.json'
+        open(VOLUME_PATH + serverFileName, 'w')
 
     if os.path.exists(VOLUME_PATH + serverFileName):
         with open(VOLUME_PATH + serverFileName, 'r') as f:
@@ -800,4 +802,4 @@ def invalidUrlHandler(path):
 if __name__ == '__main__':
     # Assign the logId and serverFileName
     assignLogIdAndFileName()
-    app.run(host="0.0.0.0", port=5000)
+    app.run(debug=True,host="0.0.0.0", port=5000)

@@ -66,3 +66,10 @@ run: check_network
 
 # sudo docker run -p 5000:5000 -e "SERVER_ID=123456" -e "MYSQL_HOST=DB1" -e "SERVER_NAME=server1" --network my_network -v persistentStorage:/persistentStorageMedia --name server1 my-server-app
 # sudo docker run -p 5001:5000 -e "SERVER_ID=123457" -e "MYSQL_HOST=DB2" -e "SERVER_NAME=server2" --network my_network -v persistentStorage:/persistentStorageMedia --name server2 my-server-app
+
+docker build -t loadbalancer ./loadbalancer
+docker build -t shard_manager ./Shard_Manager
+docker build -t server ./Server
+docker rm -f $(docker ps -aq)
+docker run -p 5000:5000 --privileged=true --name my_loadbalancer_app --network my_network -it loadbalancer
+docker run --privileged=true -v persistentStorage:/persistentStorageMedia --name shard_manager --network my_network -it shard_manager

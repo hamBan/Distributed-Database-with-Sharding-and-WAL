@@ -187,7 +187,7 @@ def initialize_database():
         "status": status
     }
     update_configuration()
-    return jsonify(response_json), 200
+    return response_json, 200
 
 @app.route('/status', methods=['GET'])
 def get_status():
@@ -532,6 +532,6 @@ def not_found_error(error):
     return jsonify({'error': 'Not found'}), 404
 
 if __name__ =='__main__':
-    print(os.popen(f"sudo docker rm my_network").read())
-    print(os.popen(f"sudo docker network create my_network").read())
+    # print(os.popen(f"sudo docker rm my_network").read())
+    # print(os.popen(f"sudo docker network create my_network").read())
     app.run(host="0.0.0.0", port=5000, threaded=True)

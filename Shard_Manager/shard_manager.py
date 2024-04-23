@@ -2,6 +2,7 @@ from flask import Flask,jsonify,request
 import json
 import time
 import os
+import platform
 import requests
 import socket
 import sqlite3
@@ -18,7 +19,7 @@ database_schema = None # To store the schema when init is called
 def elect_primary(shard):
     max_seq = 0
     max_server = ''
-    for server in all_servers[shard]:
+    for server in all_servers[shard['Shard_id']]:
         logfile = open(server+'.json')
         log = json.load(logfile)
         for seq_num in log:
@@ -26,7 +27,7 @@ def elect_primary(shard):
                 max_seq = seq_num
                 max_server = server
         logfile.close()
-    primary_servers[shard] = max_server
+    primary_servers[shard['Shard_id']] = max_server
 
 def update_log(server):
     logfile = open(server+'.json')
@@ -94,8 +95,11 @@ def replicate_log(server):
 def init():
     # host_ip = socket.gethostbyname('host.docker.internal')
     try :
-        host_ip = "172.17.0.1"
-        url = f'http://{host_ip}:9000/spawn'
+        # if platform.system() == 'Windows':
+        host_ip = socket.gethostbyname('host.docker.internal')
+        # else:
+        #     host_ip = "172.17.0.1"
+        url = f'http://{host_ip}:7000/spawn'
         payload = request.get_json()
         global database_schema
         N = payload.get('N')
@@ -120,11 +124,14 @@ def init():
             # Wait for the database to be configured 
             while True :
                 try : 
-                    response = request.post(server_url, json = data)
+                    print('Sending to server')
+                    response = requests.post(server_url, json = data)
+                    print('Message sent',response.status_code)
                     if response.status_code == 200 :
                         print("Server Spawn Success")
                         break
                 except Exception as e :
+                    print(e)
                     time.sleep(30)
             if server_name not in all_shards : 
                 all_shards[server_name] = []
@@ -146,8 +153,11 @@ def add():
     new_servers = payload.get('servers')
 
     # host_ip = socket.gethostbyname('host.docker.internal')
-    host_ip = "172.17.0.1"
-    url = f'http://{host_ip}:9000/spawn'
+    if platform.system() == 'Windows':
+        host_ip = socket.gethostbyname('host.docker.internal')
+    else:
+        host_ip = "172.17.0.1"
+    url = f'http://{host_ip}:7000/spawn'
 
 
     for shard in new_shards:
@@ -189,8 +199,11 @@ def rm():
     deleted_servers = payload.get("servers")
     try:
         # host_ip = socket.gethostbyname('host.docker.internal')
-        host_ip = "172.17.0.1"
-        url = f'http://{host_ip}:9000/remove'
+        if platform.system() == 'Windows':
+            host_ip = socket.gethostbyname('host.docker.internal')
+        else:
+            host_ip = "172.17.0.1"
+        url = f'http://{host_ip}:7000/remove'
         data = payload
         response = requests.post(url, json=data)
         print('Remove request successful:', response.text)
@@ -213,7 +226,8 @@ def rm():
 
 @app.route('/get_primary', methods=['POST'])
 def get_primary():
-    return primary_servers
+    print(primary_servers)
+    return primary_servers,200
 
 # Server endpoint for requests at http://localhost:5000/home, methond=GET
 @app.route('/home', methods = ['GET'])
