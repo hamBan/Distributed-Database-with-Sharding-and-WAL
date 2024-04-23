@@ -184,7 +184,7 @@ def initialize_database():
         if response.status_code != 200: 
             return {"message" : "Cannot config"}, 400
     except Exception as e : 
-        message = e
+        message = str(e)
         status = "Unsuccessful"
 
     response_json = {
