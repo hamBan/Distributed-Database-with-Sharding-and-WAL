@@ -12,7 +12,7 @@ from ConsistentHashmap import ConsistentHashmapImpl
 app = Flask(__name__)
 
 replicas = []
-log_id = 0 
+log_id = 1 
 N = 3
 serverName = []
 virtualServers = 9
@@ -39,7 +39,7 @@ server_name_to_id = {}
 shard_locks = {}
 ports = {}
 log_lock =  threading.Lock()
-# TODO SOHAM 
+
 SHARD_MANAGER_URL = "http://shard_manager:6000/"
 # Log operations
 LOG_OPERATION_WRITE = "write"
@@ -101,7 +101,12 @@ def update_configuration():
     for i in current_configuration['shards'] : 
         i['primary_server'] = response.get(i['Shard_id'])
 
-
+def get_primary_server(shard_id): 
+    update_configuration()
+    for i in current_configuration['shards'] :
+        if i['shard_id'] == shard_id: 
+            return 
+            i['primary_server'] 
 
 current_configuration = {
     "N" : 0, 
@@ -175,11 +180,11 @@ def initialize_database():
             "servers" : servers__
         }
         # print(sm_payload)
-        response = requests.get(f"{SHARD_MANAGER_URL}init", json = sm_payload).json()
+        response = requests.get(f"{SHARD_MANAGER_URL}init", json = sm_payload)
         if response.status_code != 200: 
             return {"message" : "Cannot config"}, 400
     except Exception as e : 
-        message = e
+        message = str(e)
         status = "Unsuccessful"
 
     response_json = {
@@ -244,7 +249,7 @@ def add_servers():
                 server_shard_mapping[name].append(shard_id)
         
         sm_payload["servers"] = servers__
-        response = requests.get(f"{SHARD_MANAGER_URL}add", sm_payload).json()
+        response = requests.get(f"{SHARD_MANAGER_URL}add", json = sm_payload)
         if response.status_code != 200: 
             return {"message" : "Cannot config"}, 400
         response_message = {
@@ -297,7 +302,7 @@ def remove():
             server__.append(random_server)
             N-=1
         sm_payload["servers"] = server__
-        response = requests.get(f"{SHARD_MANAGER_URL}rm", sm_payload).json()
+        response = requests.get(f"{SHARD_MANAGER_URL}rm", json = sm_payload)
         if response.status_code != 200: 
             return {"message" : "Cannot config"}, 400
         update_configuration()
@@ -370,9 +375,8 @@ def write():
             shard_lock = shard_locks.setdefault(shard_id, threading.Lock())
             shard_lock.acquire()
             try:
-                with open(VOLUME_PATH + "primary_server.json", 'r') as f:
-                    data = json.load(f)  
-                server_list = [data.get(shard_id)]
+                update_configuration()
+                server_list = [get_primary_server(shard_id)]
                 curr_idx = int(shard_information[shard_id]['valid_idx'])
                 tried = 0 
                 for serverName in server_list :
@@ -426,9 +430,7 @@ def update():
             message = ""
             code = 200
             try:
-                with open(VOLUME_PATH + "primary_server.json", 'r') as f:
-                    data = json.load(f)  
-                server_list = [data.get(shard_id)]
+                server_list = [get_primary_server(shard_id)]
                 for serverName in server_list :
                     if code == 400 :
                         break
@@ -478,9 +480,7 @@ def delete():
             message = ""
             code = 200
             try:
-                with open(VOLUME_PATH + "primary_server.json", 'r') as f:
-                    data = json.load(f)  
-                server_list = [data.get(shard_id)]
+                server_list = [get_primary_server(shard_id)]
                 for serverName in server_list :
                     if code == 400 :
                         break
