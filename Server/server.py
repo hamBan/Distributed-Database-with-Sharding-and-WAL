@@ -241,16 +241,12 @@ def assignLogIdAndFileName():
     global logId
     global serverFileName
 
-    if serverFileName is None:
+    if serverFileName == None:
         serverFileName = os.environ.get('SERVER_NAME') + '.json'
-        open(VOLUME_PATH + serverFileName, 'w')
-
-    if os.path.exists(VOLUME_PATH + serverFileName):
-        with open(VOLUME_PATH + serverFileName, 'r') as f:
-            data = json.load(f)
-            logId = max(data.keys()) + 1
-    else:
-        logId = 0
+    
+    if not os.path.exists(VOLUME_PATH + serverFileName):
+        with open(VOLUME_PATH + serverFileName, 'w') as f:
+            json.dump({},f)
 
 # Function to write the log
 def writeLog(operationName, log, log_id, shard_id, is_commited):
