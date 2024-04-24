@@ -103,10 +103,10 @@ def update_configuration():
 
 def get_primary_server(shard_id): 
     update_configuration()
+    print(current_configuration)
     for i in current_configuration['shards'] :
-        if i['shard_id'] == shard_id: 
-            return 
-            i['primary_server'] 
+        if i['Shard_id'] == shard_id : 
+            return i['primary_server']
 
 current_configuration = {
     "N" : 0, 
@@ -370,7 +370,8 @@ def write():
                 if shard_id not in shard_queries :
                     shard_queries[shard_id] = []
                 shard_queries[shard_id].append(entry)
-        
+        print(shard_queries)
+        # Correct till here 
         for shard_id, entry in shard_queries.items():
             shard_lock = shard_locks.setdefault(shard_id, threading.Lock())
             shard_lock.acquire()
@@ -378,7 +379,7 @@ def write():
                 update_configuration()
                 server_list = [get_primary_server(shard_id)]
                 curr_idx = int(shard_information[shard_id]['valid_idx'])
-                tried = 0 
+                tried = 0
                 for serverName in server_list :
                     load_balancer_url = f"{get_server_url(serverName)}writeRAFT"
                     current_log_id = 0
@@ -403,7 +404,7 @@ def write():
                         shard_information[shard_id]['valid_idx'] = int(response_json.get('current_idx'))
                         if tried == 0 :
                             entries_added+=(shard_information[shard_id]['valid_idx'] - curr_idx)
-                            tried+=1 
+                            tried+=1
                     else:
                         print(response.text)
                         print("Failed to get response from load balancer. Status code:", response.status_code)
@@ -414,7 +415,7 @@ def write():
         return jsonify({'message': f"{entries_added} Data entries added", 'status': 'success'}), 200
     except Exception as e : 
         print(e) 
-        return jsonify({'message': f"Failed to get response from load balancer", 'status': 'Unsuccessful'}), 400
+        return jsonify({'message': f"Failed to get response from load balancer {str(e)}", 'status': 'Unsuccessful'}), 400
 
 
 @app.route('/update', methods=['PUT'])
