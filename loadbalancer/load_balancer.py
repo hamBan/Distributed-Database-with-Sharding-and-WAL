@@ -66,29 +66,6 @@ def get_random_server_id() :
 def get_server_url(name):
     return f"http://{name}:5000/"
 
-# Function to write the log
-def writeLog(operationName, log, commit_status):
-    global logId
-    dataToWrite = {logId: {"operationName": operationName, "log": log, "commit_status": commit_status}}
-
-    if os.path.exists(VOLUME_PATH + "log.json"):
-        with open(VOLUME_PATH + "log.json", 'r') as f:
-            data = json.load(f)
-            # Check if logId exists in the data
-            if logId in data:
-                # Update the existing entry
-                data[logId].update(dataToWrite[logId])
-            else:
-                # Add a new entry
-                data.update(dataToWrite)
-    else:
-        data = dataToWrite
-
-    with open(VOLUME_PATH + "log.json", 'w') as f:
-        json.dump(data, f)
-
-    logId += 1
-
 def get_shard_id_from_stud_id(id):
     for shardId, info in shard_information.items(): 
         if id >= int(info['Stud_id_low']) and id < (int(info['Stud_id_low']) + int(info['Shard_size'])):
@@ -411,7 +388,6 @@ def write():
                         return jsonify({'message': f"Failed to get response from load balancer. Status code:{response.status_code}", 'status': 'Unsuccessful'}), 400
             finally:
                 shard_lock.release()
-        writeLog(LOG_OPERATION_WRITE, request.get_json(), 1)
         return jsonify({'message': f"{entries_added} Data entries added", 'status': 'success'}), 200
     except Exception as e : 
         print(e) 
@@ -461,7 +437,6 @@ def update():
                         code = 400
             finally:
                 shard_lock.release()
-            writeLog(LOG_OPERATION_UPDATE, request.get_json(), 1)
             return jsonify({'message': message, 'status' : "successful"}), code
         return jsonify({'message': 'Update Unsuccessful'}), 400 
     except Exception as e :
@@ -510,7 +485,6 @@ def delete():
                         code = 400
             finally:
                 shard_lock.release()
-            writeLog(LOG_OPERATION_DELETE, request.get_json(), 1)
             return jsonify({'message': message, 'status' : "successful"}), code
         return jsonify({'message': 'Update Unsuccessful'}), 400 
     except Exception as e : 
