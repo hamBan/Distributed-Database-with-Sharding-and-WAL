@@ -259,7 +259,7 @@ def writeLog(operationName, log, log_id, shard_id, is_commited):
             # Check if logId exists in the data
             if log_id in data:
                 # Update the existing entry
-                data[log_id].update(dataToWrite[log_id])
+                data[log_id]=dataToWrite[log_id]
             else:
                 # Add a new entry
                 data.update(dataToWrite)
@@ -362,10 +362,12 @@ def writeRAFT():
             # send request to other servers
             for server in otherServers:
                 url = getRequestURL(server, "writeRAFT")
-                response = requests.post(url, json=requestToReplica)
-
-                if response.status_code == 200:
-                    replicated += 1
+                try : 
+                    response = requests.post(url, json=requestToReplica)
+                    if response.status_code == 200:
+                        replicated += 1
+                except : 
+                    pass 
 
             # If replicated to majority of servers, write to the database
             if replicated >= len(otherServers) // 2:
@@ -569,11 +571,12 @@ def updateRAFT():
                 # send request to other servers
                 for server in otherServers:
                     url = getRequestURL(server, "updateRAFT")
-                    response = requests.put(url, json=requestToReplica)
-
-                    if response.status_code == 200:
-                        replicated += 1
-
+                    try : 
+                        response = requests.put(url, json=requestToReplica)
+                        if response.status_code == 200:
+                            replicated += 1
+                    except : 
+                        pass
                 # If replicated to majority of servers, write to the database
                 if replicated >= len(otherServers) // 2:
                     # writing to the database

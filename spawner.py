@@ -14,6 +14,16 @@ def spawn():
         os.system(f'docker run -d --privileged=true -v persistentStorage:/persistentStorageMedia -e "MYSQL_HOST={server}_db" -e "SERVER_NAME={server}" --network my_network --name {server} server')
     return {},200
 
+@app.route('/respawn', methods = ['POST'])
+def respawn():
+    payload = request.get_json()
+    server = payload['server']
+    try :
+        os.system(f'docker start {server}')
+        return {}, 200 
+    except : 
+        return {},400
+
 @app.route('/remove', methods = ['POST'])
 def remove():
     payload = request.get_json()

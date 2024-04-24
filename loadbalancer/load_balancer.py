@@ -80,7 +80,6 @@ def update_configuration():
 
 def get_primary_server(shard_id): 
     update_configuration()
-    print(current_configuration)
     for i in current_configuration['shards'] :
         if i['Shard_id'] == shard_id : 
             return i['primary_server']
@@ -347,7 +346,6 @@ def write():
                 if shard_id not in shard_queries :
                     shard_queries[shard_id] = []
                 shard_queries[shard_id].append(entry)
-        print(shard_queries)
         # Correct till here 
         for shard_id, entry in shard_queries.items():
             shard_lock = shard_locks.setdefault(shard_id, threading.Lock())
