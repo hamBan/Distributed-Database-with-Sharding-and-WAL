@@ -329,6 +329,14 @@ def read():
         print(e)
         return jsonify({'message': "Failes to read", 'status': 'Unsuccessful'}), 400
 
+@app.route('/read/<server_id>', methods=['GET'])
+def read_server(server_id):
+    try : 
+        response = requests.get(f"{get_server_url(server_id)}copy", json={'shards': server_shard_mapping[server_id]})
+        return response , 200 
+    except : 
+        return {"error": "Error"}, 400
+
 
 @app.route('/write', methods=['POST'])
 def write():

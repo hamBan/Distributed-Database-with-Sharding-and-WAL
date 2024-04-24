@@ -12,6 +12,7 @@ import logging
 from threading import Lock
 import requests
 import json
+import threading
 
 # Lock to handle the concurrency issues
 lock = Lock()
@@ -43,6 +44,7 @@ db = SQLAlchemy(app)
 logs = {}
 serverFileName = None
 VOLUME_PATH = '/persistentStorageMedia/'
+log_lock = threading.Lock()
 
 # ORM Model for the Student table. Table name will be dynamically provided
 def ClassFactory(name):
@@ -252,21 +254,16 @@ def writeLog(operationName, log, log_id, shard_id, is_commited):
     dataToWrite = {}
     
     dataToWrite[log_id] = {"operationName": operationName, "log": log, "shard_id" : shard_id, "is_commited" : is_commited}
-
+    log_lock.acquire()
     if os.path.exists(VOLUME_PATH + serverFileName):
         with open(VOLUME_PATH + serverFileName, 'r') as f:
             data = json.load(f)
-            # Check if logId exists in the data
-            if log_id in data:
-                # Update the existing entry
-                data[log_id]=dataToWrite[log_id]
-            else:
-                # Add a new entry
-                data.update(dataToWrite)
+            data.update(dataToWrite)
     else:
         data = dataToWrite
     with open(VOLUME_PATH + serverFileName, 'w') as f:
         json.dump(data, f)
+    log_lock.release()
 
 # Function to return the logs
 @app.route('/getLogs', methods = ['GET'])
