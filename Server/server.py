@@ -41,7 +41,6 @@ db = SQLAlchemy(app)
 
 # dictionary to store the logs
 logs = {}
-logId = 0
 serverFileName = None
 VOLUME_PATH = '/persistentStorageMedia/'
 
@@ -238,7 +237,6 @@ def getRequestURL(server, endpoint):
 # Function to assign the logId
 def assignLogIdAndFileName():
     # Check if serverFileName exists. If exists, then assign the maximum logId + 1
-    global logId
     global serverFileName
 
     if serverFileName == None:
