@@ -333,7 +333,7 @@ def read():
 def read_server(server_id):
     try : 
         response = requests.get(f"{get_server_url(server_id)}copy", json={'shards': server_shard_mapping[server_id]})
-        return response , 200 
+        return response.json() , 200 
     except : 
         return {"error": "Error"}, 400
 
@@ -497,15 +497,15 @@ def delete():
         print(e)
         return jsonify({'message': 'Update Unsuccessful'}), 400 
 
-@app.route('/read/<server_id>', methods=['GET'])
-def read_server_data(server_id):
-    payload = request.get_json()
-    load_balancer_url = f"{get_server_url(serverName)}copy"
-    payload2 = {
-        'shards': server_shard_mapping[server_id]
-    }
-    response = requests.delete(load_balancer_url, json=payload2)
-    return response.json()
+# @app.route('/read/<server_id>', methods=['GET'])
+# def read_server_data(server_id):
+#     payload = request.get_json()
+#     load_balancer_url = f"{get_server_url(serverName)}copy"
+#     payload2 = {
+#         'shards': server_shard_mapping[server_id]
+#     }
+#     response = requests.delete(load_balancer_url, json=payload2)
+#     return response.json()
     
 # Error handling
 @app.errorhandler(404)
