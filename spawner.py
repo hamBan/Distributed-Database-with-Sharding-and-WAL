@@ -19,7 +19,10 @@ def respawn():
     payload = request.get_json()
     server = payload['server']
     try :
-        os.system(f'docker start {server}')
+        output_stream = os.popen(f'docker start {server}')
+        for line in output_stream:
+            if "Error" in line.lower():
+                return {}, 400
         return {}, 200 
     except : 
         return {},400

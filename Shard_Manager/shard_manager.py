@@ -18,7 +18,6 @@ all_servers = {} # Format : {shard : [server list]}
 primary_servers = {} # Format : {shard : primary server}
 database_schema = None # To store the schema when init is called 
 
-
 def elect_primary(shard):
     max_seq = 0
     max_server = ''
@@ -38,6 +37,7 @@ def elect_primary(shard):
 
 
 def update_log(server):
+    print("Update Log called")
     logfile = open(VOLUME_PATH+server+'.json')
     log = json.load(logfile)
     logfile.close()
@@ -51,33 +51,36 @@ def update_log(server):
                 max_seq_present = int(seq_num)
             elif log[seq_num]['shard_id'] == shard and log[seq_num]['is_committed'] == 0:
                 url = f"http://{server}:5000/{primary_log[seq_num]['operation_name']}"
-                data = primary_log[seq_num]['operation_name']
-                if primary_log[seq_num]['operation_name'] == 'update':
+                data = primary_log[seq_num]['log']
+                data['isPrimary'] = False
+                if primary_log[seq_num]['operation_name'] == 'updateRAFT':
                     requests.put(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'write':
+                elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
                     requests.post(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'del':
+                elif primary_log[seq_num]['operation_name'] == 'delRAFT':
                     requests.delete(url, json=data)
-                log[seq_num]['is_committed'] = 1
+                # log[seq_num]['is_committed'] = 1
         max_seq = 0
         for seq_num in primary_log:
             if primary_log[seq_num]['shard_id'] == shard and int(seq_num) > max_seq_present:
                 log[seq_num] = primary_log[seq_num]
                 url = f"http://{server}:5000/{primary_log[seq_num]['operation_name']}"
-                data = primary_log[seq_num]['operation_name']
-                if primary_log[seq_num]['operation_name'] == 'update':
+                data = primary_log[seq_num]['log']
+                data['isPrimary'] = False
+                if primary_log[seq_num]['operation_name'] == 'updateRAFT':
                     requests.put(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'write':
+                elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
                     requests.post(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'del':
+                elif primary_log[seq_num]['operation_name'] == 'delRAFT':
                     requests.delete(url, json=data)
-                log[seq_num]['is_committed'] = 1
-    logfile_write = open(VOLUME_PATH+server+'.json','w')
-    json.dump(log,logfile_write)
-    logfile_write.close()
+    #             log[seq_num]['is_committed'] = 1
+    # logfile_write = open(VOLUME_PATH+server+'.json','w')
+    # json.dump(log,logfile_write)
+    # logfile_write.close()
 
 # This is called upon Server respawned after Failure 
 def replicate_log(server):
+    print("Replicate Log called")
     log = {}
     for shard in all_shards[server]:
         primary_logfile = open(VOLUME_PATH+primary_servers[shard]+'.json')
@@ -87,18 +90,19 @@ def replicate_log(server):
             if primary_log[seq_num]['shard_id'] == shard:
                 log[seq_num] = primary_log[seq_num]
                 url = f"http://{server}:5000/{primary_log[seq_num]['operation_name']}"
-                data = primary_log[seq_num]['operation_name']
-                if primary_log[seq_num]['operation_name'] == 'update':
+                data = primary_log[seq_num]['log']
+                data['isPrimary'] = False
+                if primary_log[seq_num]['operation_name'] == 'updateRAFT':
                     requests.put(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'write':
+                elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
                     requests.post(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'del':
+                elif primary_log[seq_num]['operation_name'] == 'delRAFT':
                     requests.delete(url, json=data)
-                log[seq_num]['is_committed'] = 1
+                # log[seq_num]['is_committed'] = 1
             
-    logfile_write = open(VOLUME_PATH+server+'.json','w')
-    json.dump(log,logfile_write)
-    logfile_write.close()
+    # logfile_write = open(VOLUME_PATH+server+'.json','w')
+    # json.dump(log,logfile_write)
+    # logfile_write.close()
 
 @app.route('/init', methods=['GET'])
 def init():
@@ -187,6 +191,7 @@ def add():
             try : 
                 response = requests.post(server_url, json = data)
                 if response.status_code == 200 :
+                    print(f"Server {server_name} spawned successfully")
                     break
             except Exception as e :
                 time.sleep(30)
@@ -198,7 +203,6 @@ def add():
 
         # Replicate the shards logs in the server 
         replicate_log(server_name)
-
     return {},200
 
 @app.route('/rm', methods=['GET'])

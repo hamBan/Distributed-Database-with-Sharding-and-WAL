@@ -21,9 +21,9 @@ lock = Lock()
 app = Flask(__name__)
 
 # Log operations
-LOG_OPERATION_WRITE = "write"
-LOG_OPERATION_UPDATE = "update"
-LOG_OPERATION_DELETE = "del"
+LOG_OPERATION_WRITE = "writeRAFT"
+LOG_OPERATION_UPDATE = "updateRAFT"
+LOG_OPERATION_DELETE = "delRAFT"
 
 # Environment Variables to cnnect to database. If not present, use the default values
 DATABASE_USER = os.environ.get('MYSQL_USER', 'root')
@@ -253,7 +253,7 @@ def writeLog(operationName, log, log_id, shard_id, is_commited):
     # make logId as key, operationName and log as values
     dataToWrite = {}
     
-    dataToWrite[log_id] = {"operationName": operationName, "log": log, "shard_id" : shard_id, "is_commited" : is_commited}
+    dataToWrite[log_id] = {"operation_name": operationName, "log": log, "shard_id" : shard_id, "is_committed" : is_commited}
     log_lock.acquire()
     if os.path.exists(VOLUME_PATH + serverFileName):
         with open(VOLUME_PATH + serverFileName, 'r') as f:
