@@ -1,11 +1,3 @@
-# Distributed-Database-with-Sharding-and-WAL
-
-To help me generate a README for your project, I'll first need to review the contents of the PDF you've provided. I'll extract key details such as the project title, features, installation steps, and usage guidelines from the document. Let's take a look at the PDF now.
-
-Based on the content of your PDF, here is a draft README file for your project on implementing Write-Ahead Logging (WAL) for consistency in a sharded, replicated database system. This draft includes details on installation, usage, features, and more.
-
----
-
 # Replicated Database with Write-Ahead Logging (WAL)
 
 ## Introduction
