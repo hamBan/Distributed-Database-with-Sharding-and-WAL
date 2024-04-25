@@ -1,4 +1,4 @@
-# Scalable Sharded Database System
+# Distributed Database with Sharding and WAL
 
 ## Overview
 
