@@ -12,6 +12,7 @@ import logging
 from threading import Lock
 import requests
 import json
+import threading
 
 # Lock to handle the concurrency issues
 lock = Lock()
@@ -20,9 +21,9 @@ lock = Lock()
 app = Flask(__name__)
 
 # Log operations
-LOG_OPERATION_WRITE = "write"
-LOG_OPERATION_UPDATE = "update"
-LOG_OPERATION_DELETE = "del"
+LOG_OPERATION_WRITE = "writeRAFT"
+LOG_OPERATION_UPDATE = "updateRAFT"
+LOG_OPERATION_DELETE = "delRAFT"
 
 # Environment Variables to cnnect to database. If not present, use the default values
 DATABASE_USER = os.environ.get('MYSQL_USER', 'root')
@@ -41,9 +42,9 @@ db = SQLAlchemy(app)
 
 # dictionary to store the logs
 logs = {}
-logId = 0
 serverFileName = None
 VOLUME_PATH = '/persistentStorageMedia/'
+log_lock = threading.Lock()
 
 # ORM Model for the Student table. Table name will be dynamically provided
 def ClassFactory(name):
@@ -103,6 +104,7 @@ def config():
         message["message"] = ""
         isError = False
         # Server ID taking from the environment variable named SERVER_ID
+
         serverName = DATABASE_HOST
 
         if schema is None or shards is None:
@@ -148,6 +150,7 @@ def config():
         statusCode = 400
 
         # Returning the error message along with the status code 400
+    print(message,statusCode)
     return message, statusCode
 
 def executeAndReturn(query):
@@ -236,40 +239,31 @@ def getRequestURL(server, endpoint):
 # Function to assign the logId
 def assignLogIdAndFileName():
     # Check if serverFileName exists. If exists, then assign the maximum logId + 1
-    global logId
     global serverFileName
 
-    if serverFileName is None:
+    if serverFileName == None:
         serverFileName = os.environ.get('SERVER_NAME') + '.json'
-
-    if os.path.exists(VOLUME_PATH + serverFileName):
-        with open(VOLUME_PATH + serverFileName, 'r') as f:
-            data = json.load(f)
-            logId = max(data.keys()) + 1
-    else:
-        logId = 0
+    
+    if not os.path.exists(VOLUME_PATH + serverFileName):
+        with open(VOLUME_PATH + serverFileName, 'w') as f:
+            json.dump({},f)
 
 # Function to write the log
 def writeLog(operationName, log, log_id, shard_id, is_commited):
     # make logId as key, operationName and log as values
     dataToWrite = {}
     
-    dataToWrite[log_id] = {"operationName": operationName, "log": log, "shard_id" : shard_id, "is_commited" : is_commited}
-
+    dataToWrite[log_id] = {"operation_name": operationName, "log": log, "shard_id" : shard_id, "is_committed" : is_commited}
+    log_lock.acquire()
     if os.path.exists(VOLUME_PATH + serverFileName):
         with open(VOLUME_PATH + serverFileName, 'r') as f:
             data = json.load(f)
-            # Check if logId exists in the data
-            if log_id in data:
-                # Update the existing entry
-                data[log_id].update(dataToWrite[log_id])
-            else:
-                # Add a new entry
-                data.update(dataToWrite)
+            data.update(dataToWrite)
     else:
         data = dataToWrite
     with open(VOLUME_PATH + serverFileName, 'w') as f:
         json.dump(data, f)
+    log_lock.release()
 
 # Function to return the logs
 @app.route('/getLogs', methods = ['GET'])
@@ -365,10 +359,12 @@ def writeRAFT():
             # send request to other servers
             for server in otherServers:
                 url = getRequestURL(server, "writeRAFT")
-                response = requests.post(url, json=requestToReplica)
-
-                if response.status_code == 200:
-                    replicated += 1
+                try : 
+                    response = requests.post(url, json=requestToReplica)
+                    if response.status_code == 200:
+                        replicated += 1
+                except : 
+                    pass 
 
             # If replicated to majority of servers, write to the database
             if replicated >= len(otherServers) // 2:
@@ -572,11 +568,12 @@ def updateRAFT():
                 # send request to other servers
                 for server in otherServers:
                     url = getRequestURL(server, "updateRAFT")
-                    response = requests.put(url, json=requestToReplica)
-
-                    if response.status_code == 200:
-                        replicated += 1
-
+                    try : 
+                        response = requests.put(url, json=requestToReplica)
+                        if response.status_code == 200:
+                            replicated += 1
+                    except : 
+                        pass
                 # If replicated to majority of servers, write to the database
                 if replicated >= len(otherServers) // 2:
                     # writing to the database
@@ -799,4 +796,4 @@ def invalidUrlHandler(path):
 if __name__ == '__main__':
     # Assign the logId and serverFileName
     assignLogIdAndFileName()
-    app.run(host="0.0.0.0", port=5000)
+    app.run(debug=True,host="0.0.0.0", port=5000)

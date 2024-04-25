@@ -12,7 +12,7 @@ from ConsistentHashmap import ConsistentHashmapImpl
 app = Flask(__name__)
 
 replicas = []
-log_id = 0 
+log_id = 1 
 N = 3
 serverName = []
 virtualServers = 9
@@ -39,7 +39,7 @@ server_name_to_id = {}
 shard_locks = {}
 ports = {}
 log_lock =  threading.Lock()
-# TODO SOHAM 
+
 SHARD_MANAGER_URL = "http://shard_manager:6000/"
 # Log operations
 LOG_OPERATION_WRITE = "write"
@@ -66,29 +66,6 @@ def get_random_server_id() :
 def get_server_url(name):
     return f"http://{name}:5000/"
 
-# Function to write the log
-def writeLog(operationName, log, commit_status):
-    global logId
-    dataToWrite = {logId: {"operationName": operationName, "log": log, "commit_status": commit_status}}
-
-    if os.path.exists(VOLUME_PATH + "log.json"):
-        with open(VOLUME_PATH + "log.json", 'r') as f:
-            data = json.load(f)
-            # Check if logId exists in the data
-            if logId in data:
-                # Update the existing entry
-                data[logId].update(dataToWrite[logId])
-            else:
-                # Add a new entry
-                data.update(dataToWrite)
-    else:
-        data = dataToWrite
-
-    with open(VOLUME_PATH + "log.json", 'w') as f:
-        json.dump(data, f)
-
-    logId += 1
-
 def get_shard_id_from_stud_id(id):
     for shardId, info in shard_information.items(): 
         if id >= int(info['Stud_id_low']) and id < (int(info['Stud_id_low']) + int(info['Shard_size'])):
@@ -97,11 +74,15 @@ def get_shard_id_from_stud_id(id):
 
 def update_configuration():
     global current_configuration
-    response = requests.get(f"{SHARD_MANAGER_URL}get_primary").json()
+    response = requests.post(f"{SHARD_MANAGER_URL}get_primary").json()
     for i in current_configuration['shards'] : 
         i['primary_server'] = response.get(i['Shard_id'])
 
-
+def get_primary_server(shard_id): 
+    update_configuration()
+    for i in current_configuration['shards'] :
+        if i['Shard_id'] == shard_id : 
+            return i['primary_server']
 
 current_configuration = {
     "N" : 0, 
@@ -171,14 +152,15 @@ def initialize_database():
         sm_payload = { 
             "N" : N, 
             "schema" : server_schema, 
-            "shard" : shards, 
+            "shards" : shards, 
             "servers" : servers__
-        } 
-        response = requests.get(f"{SHARD_MANAGER_URL}init", sm_payload).json()
+        }
+        # print(sm_payload)
+        response = requests.get(f"{SHARD_MANAGER_URL}init", json = sm_payload)
         if response.status_code != 200: 
             return {"message" : "Cannot config"}, 400
     except Exception as e : 
-        message = e
+        message = str(e)
         status = "Unsuccessful"
 
     response_json = {
@@ -186,7 +168,7 @@ def initialize_database():
         "status": status
     }
     update_configuration()
-    return jsonify(response_json), 200
+    return response_json, 200
 
 @app.route('/status', methods=['GET'])
 def get_status():
@@ -243,7 +225,7 @@ def add_servers():
                 server_shard_mapping[name].append(shard_id)
         
         sm_payload["servers"] = servers__
-        response = requests.get(f"{SHARD_MANAGER_URL}add", sm_payload).json()
+        response = requests.get(f"{SHARD_MANAGER_URL}add", json = sm_payload)
         if response.status_code != 200: 
             return {"message" : "Cannot config"}, 400
         response_message = {
@@ -296,7 +278,7 @@ def remove():
             server__.append(random_server)
             N-=1
         sm_payload["servers"] = server__
-        response = requests.get(f"{SHARD_MANAGER_URL}rm", sm_payload).json()
+        response = requests.get(f"{SHARD_MANAGER_URL}rm", json = sm_payload)
         if response.status_code != 200: 
             return {"message" : "Cannot config"}, 400
         update_configuration()
@@ -347,6 +329,14 @@ def read():
         print(e)
         return jsonify({'message': "Failes to read", 'status': 'Unsuccessful'}), 400
 
+@app.route('/read/<server_id>', methods=['GET'])
+def read_server(server_id):
+    try : 
+        response = requests.get(f"{get_server_url(server_id)}copy", json={'shards': server_shard_mapping[server_id]})
+        return response.json() , 200 
+    except : 
+        return {"error": "Error"}, 400
+
 
 @app.route('/write', methods=['POST'])
 def write():
@@ -364,16 +354,15 @@ def write():
                 if shard_id not in shard_queries :
                     shard_queries[shard_id] = []
                 shard_queries[shard_id].append(entry)
-        
+        # Correct till here 
         for shard_id, entry in shard_queries.items():
             shard_lock = shard_locks.setdefault(shard_id, threading.Lock())
             shard_lock.acquire()
             try:
-                with open(VOLUME_PATH + "primary_server.json", 'r') as f:
-                    data = json.load(f)  
-                server_list = [data.get(shard_id)]
+                update_configuration()
+                server_list = [get_primary_server(shard_id)]
                 curr_idx = int(shard_information[shard_id]['valid_idx'])
-                tried = 0 
+                tried = 0
                 for serverName in server_list :
                     load_balancer_url = f"{get_server_url(serverName)}writeRAFT"
                     current_log_id = 0
@@ -398,18 +387,17 @@ def write():
                         shard_information[shard_id]['valid_idx'] = int(response_json.get('current_idx'))
                         if tried == 0 :
                             entries_added+=(shard_information[shard_id]['valid_idx'] - curr_idx)
-                            tried+=1 
+                            tried+=1
                     else:
                         print(response.text)
                         print("Failed to get response from load balancer. Status code:", response.status_code)
                         return jsonify({'message': f"Failed to get response from load balancer. Status code:{response.status_code}", 'status': 'Unsuccessful'}), 400
             finally:
                 shard_lock.release()
-        writeLog(LOG_OPERATION_WRITE, request.get_json(), 1)
         return jsonify({'message': f"{entries_added} Data entries added", 'status': 'success'}), 200
     except Exception as e : 
         print(e) 
-        return jsonify({'message': f"Failed to get response from load balancer", 'status': 'Unsuccessful'}), 400
+        return jsonify({'message': f"Failed to get response from load balancer {str(e)}", 'status': 'Unsuccessful'}), 400
 
 
 @app.route('/update', methods=['PUT'])
@@ -425,9 +413,7 @@ def update():
             message = ""
             code = 200
             try:
-                with open(VOLUME_PATH + "primary_server.json", 'r') as f:
-                    data = json.load(f)  
-                server_list = [data.get(shard_id)]
+                server_list = [get_primary_server(shard_id)]
                 for serverName in server_list :
                     if code == 400 :
                         break
@@ -457,7 +443,6 @@ def update():
                         code = 400
             finally:
                 shard_lock.release()
-            writeLog(LOG_OPERATION_UPDATE, request.get_json(), 1)
             return jsonify({'message': message, 'status' : "successful"}), code
         return jsonify({'message': 'Update Unsuccessful'}), 400 
     except Exception as e :
@@ -477,9 +462,7 @@ def delete():
             message = ""
             code = 200
             try:
-                with open(VOLUME_PATH + "primary_server.json", 'r') as f:
-                    data = json.load(f)  
-                server_list = [data.get(shard_id)]
+                server_list = [get_primary_server(shard_id)]
                 for serverName in server_list :
                     if code == 400 :
                         break
@@ -508,22 +491,21 @@ def delete():
                         code = 400
             finally:
                 shard_lock.release()
-            writeLog(LOG_OPERATION_DELETE, request.get_json(), 1)
             return jsonify({'message': message, 'status' : "successful"}), code
         return jsonify({'message': 'Update Unsuccessful'}), 400 
     except Exception as e : 
         print(e)
         return jsonify({'message': 'Update Unsuccessful'}), 400 
 
-@app.route('/read/<server_id>', methods=['GET'])
-def read_server_data(server_id):
-    payload = request.get_json()
-    load_balancer_url = f"{get_server_url(serverName)}copy"
-    payload2 = {
-        'shards': server_shard_mapping[server_id]
-    }
-    response = requests.delete(load_balancer_url, json=payload2)
-    return response.json()
+# @app.route('/read/<server_id>', methods=['GET'])
+# def read_server_data(server_id):
+#     payload = request.get_json()
+#     load_balancer_url = f"{get_server_url(serverName)}copy"
+#     payload2 = {
+#         'shards': server_shard_mapping[server_id]
+#     }
+#     response = requests.delete(load_balancer_url, json=payload2)
+#     return response.json()
     
 # Error handling
 @app.errorhandler(404)
@@ -531,6 +513,6 @@ def not_found_error(error):
     return jsonify({'error': 'Not found'}), 404
 
 if __name__ =='__main__':
-    print(os.popen(f"sudo docker rm my_network").read())
-    print(os.popen(f"sudo docker network create my_network").read())
+    # print(os.popen(f"sudo docker rm my_network").read())
+    # print(os.popen(f"sudo docker network create my_network").read())
     app.run(host="0.0.0.0", port=5000, threaded=True)
