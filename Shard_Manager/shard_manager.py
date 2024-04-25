@@ -285,7 +285,7 @@ def health_check():
                     for shard_, p_server in primary_servers.items(): 
                         if server_name == p_server : 
                             print(f'{server_name} primary for {shard_}, electing new primary...')
-                            elect_primary(shard_)
+                            elect_primary({'Shard_id':shard_})
                             print(f'New primary elected.')
                     host_ip = socket.gethostbyname('host.docker.internal')
                     url = f'http://{host_ip}:7000/respawn'
