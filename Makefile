@@ -76,3 +76,13 @@ docker run --privileged=true -v persistentStorage:/persistentStorageMedia --name
 
 docker run -p 5000:5000 --privileged=true --name my_loadbalancer_app --network my_network -it loadbalancer
 docker run --privileged=true --mount source=persistentStorage,destination=/persistentStorageMedia,target=/persistentStorageMedia --name shard_manager --network my_network -it shard_manager
+
+final:
+docker rm -f $(docker ps -aq)
+docker volume rm persistentStorage
+docker build -t loadbalancer ./loadbalancer
+docker build -t shard_manager ./Shard_Manager
+docker build -t server ./Server
+docker run -p 5000:5000 --privileged=true --name my_loadbalancer_app --network my_network -it loadbalancer
+docker run --privileged=true -v persistentStorage:/persistentStorageMedia --name shard_manager --network my_network -it shard_manager
+python spawner.py

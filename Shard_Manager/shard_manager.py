@@ -53,12 +53,16 @@ def update_log(server):
                 url = f"http://{server}:5000/{primary_log[seq_num]['operation_name']}"
                 data = primary_log[seq_num]['log']
                 data['isPrimary'] = False
-                if primary_log[seq_num]['operation_name'] == 'updateRAFT':
-                    requests.put(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
-                    requests.post(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'delRAFT':
-                    requests.delete(url, json=data)
+                while True:
+                    if primary_log[seq_num]['operation_name'] == 'updateRAFT':
+                        response = requests.put(url, json=data)
+                    elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
+                        print(url)
+                        response = requests.post(url, json=data)
+                    elif primary_log[seq_num]['operation_name'] == 'delRAFT':
+                        response = requests.delete(url, json=data)
+                    if response.status_code == 200:
+                        break
                 # log[seq_num]['is_committed'] = 1
         max_seq = 0
         for seq_num in primary_log:
@@ -67,16 +71,21 @@ def update_log(server):
                 url = f"http://{server}:5000/{primary_log[seq_num]['operation_name']}"
                 data = primary_log[seq_num]['log']
                 data['isPrimary'] = False
-                if primary_log[seq_num]['operation_name'] == 'updateRAFT':
-                    requests.put(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
-                    requests.post(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'delRAFT':
-                    requests.delete(url, json=data)
+                while True:
+                    if primary_log[seq_num]['operation_name'] == 'updateRAFT':
+                        response = requests.put(url, json=data)
+                    elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
+                        print(url)
+                        response = requests.post(url, json=data)
+                    elif primary_log[seq_num]['operation_name'] == 'delRAFT':
+                        response = requests.delete(url, json=data)
+                    if response.status_code == 200:
+                        break
     #             log[seq_num]['is_committed'] = 1
     # logfile_write = open(VOLUME_PATH+server+'.json','w')
     # json.dump(log,logfile_write)
     # logfile_write.close()
+    print('Log updated')
 
 # This is called upon Server respawned after Failure 
 def replicate_log(server):
@@ -92,12 +101,16 @@ def replicate_log(server):
                 url = f"http://{server}:5000/{primary_log[seq_num]['operation_name']}"
                 data = primary_log[seq_num]['log']
                 data['isPrimary'] = False
-                if primary_log[seq_num]['operation_name'] == 'updateRAFT':
-                    requests.put(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
-                    requests.post(url, json=data)
-                elif primary_log[seq_num]['operation_name'] == 'delRAFT':
-                    requests.delete(url, json=data)
+                while True:
+                    if primary_log[seq_num]['operation_name'] == 'updateRAFT':
+                        response = requests.put(url, json=data)
+                    elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
+                        print(url)
+                        response = requests.post(url, json=data)
+                    elif primary_log[seq_num]['operation_name'] == 'delRAFT':
+                        response = requests.delete(url, json=data)
+                    if response.status_code == 200:
+                        break
                 # log[seq_num]['is_committed'] = 1
             
     # logfile_write = open(VOLUME_PATH+server+'.json','w')
@@ -268,22 +281,32 @@ def health_check():
             servers_copy = dict(all_shards)
             for server_name, shard_list in servers_copy.items():
                 if not check_server_health(f"http://{server_name}:5000/"):
+                    print(f'{server_name} issue found!')
                     for shard_, p_server in primary_servers.items(): 
                         if server_name == p_server : 
+                            print(f'{server_name} primary for {shard_}, electing new primary...')
                             elect_primary(shard_)
+                            print(f'New primary elected.')
                     host_ip = socket.gethostbyname('host.docker.internal')
                     url = f'http://{host_ip}:7000/respawn'
                     data = {
                         "server" : server_name
                     }
+                    print('Respawning...')
                     response = requests.post(url, json=data)
-                    if response.status_code == 200 : 
+                    if response.status_code == 200 :
+                        print('Respawn successful.')
+                        time.sleep(30)
+                        print('Updating log...') 
                         update_log(server_name)
+                        print('Logs updated')
                     else :
+                        print('Respawn failed!')
                         url = f'http://{host_ip}:7000/spawn'
                         data = {
                             'servers' : [server_name]
                         }
+                        print('Spawning new server...')
                         response = requests.post(url, json=data)
                         server_url = f"http://{server_name}:5000/config"
                         data = {
