@@ -8,10 +8,9 @@ def spawn():
     payload = request.get_json()
     servers = payload['servers']
     for server in servers:
-        print('1')
         os.system(f'docker run -d --network my_network --name {server}_db database')
-        print('1')
         os.system(f'docker run -d --privileged=true -v persistentStorage:/persistentStorageMedia -e "MYSQL_HOST={server}_db" -e "SERVER_NAME={server}" --network my_network --name {server} server')
+
     return {},200
 
 @app.route('/respawn', methods = ['POST'])
