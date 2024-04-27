@@ -252,8 +252,15 @@ def rm():
 
 @app.route('/get_primary', methods=['POST'])
 def get_primary():
-    print(primary_servers)
-    return primary_servers,200
+    # print(primary_servers)
+    try  :
+        servers_list = dict(primary_servers)
+        for shard_id_, server_name in servers_list.items() :
+            if not check_server_health(f"http://{server_name}:5000/"):
+                elect_primary(shard_id_)
+        return primary_servers,200
+    except : 
+        return {}, 400
 
 # Server endpoint for requests at http://localhost:5000/home, methond=GET
 @app.route('/home', methods = ['GET'])

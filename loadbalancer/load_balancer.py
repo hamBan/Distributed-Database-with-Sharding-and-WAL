@@ -74,7 +74,11 @@ def get_shard_id_from_stud_id(id):
 
 def update_configuration():
     global current_configuration
-    response = requests.post(f"{SHARD_MANAGER_URL}get_primary").json()
+    while True : 
+        response = requests.post(f"{SHARD_MANAGER_URL}get_primary")
+        if response.status_code == 200 :
+            break
+    response = response.json()
     for i in current_configuration['shards'] : 
         i['primary_server'] = response.get(i['Shard_id'])
 
