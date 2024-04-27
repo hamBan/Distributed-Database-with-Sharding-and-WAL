@@ -91,31 +91,31 @@ def update_log(server):
 def replicate_log(server):
     print("Replicate Log called")
     log = {}
-    for shard in all_shards[server]:
-        primary_logfile = open(VOLUME_PATH+primary_servers[shard]+'.json')
-        primary_log = json.load(primary_logfile)
-        primary_logfile.close()
-        for seq_num in primary_log:
-            if primary_log[seq_num]['shard_id'] == shard:
-                log[seq_num] = primary_log[seq_num]
-                url = f"http://{server}:5000/{primary_log[seq_num]['operation_name']}"
-                data = primary_log[seq_num]['log']
-                data['isPrimary'] = False
-                while True:
-                    if primary_log[seq_num]['operation_name'] == 'updateRAFT':
-                        response = requests.put(url, json=data)
-                    elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
-                        # print(url)
-                        response = requests.post(url, json=data)
-                    elif primary_log[seq_num]['operation_name'] == 'delRAFT':
-                        response = requests.delete(url, json=data)
-                    if response.status_code == 200:
-                        break
-                # log[seq_num]['is_committed'] = 1
-            
-    # logfile_write = open(VOLUME_PATH+server+'.json','w')
-    # json.dump(log,logfile_write)
-    # logfile_write.close()
+    try:
+        for shard in all_shards[server]:
+            if shard in primary_servers:
+                if os.path.exists(VOLUME_PATH+primary_servers[shard]+'.json'):
+                    primary_logfile = open(VOLUME_PATH+primary_servers[shard]+'.json')
+                    primary_log = json.load(primary_logfile)
+                    primary_logfile.close()
+                    for seq_num in primary_log:
+                        if primary_log[seq_num]['shard_id'] == shard:
+                            log[seq_num] = primary_log[seq_num]
+                            url = f"http://{server}:5000/{primary_log[seq_num]['operation_name']}"
+                            data = primary_log[seq_num]['log']
+                            data['isPrimary'] = False
+                            while True:
+                                if primary_log[seq_num]['operation_name'] == 'updateRAFT':
+                                    response = requests.put(url, json=data)
+                                elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
+                                    # print(url)
+                                    response = requests.post(url, json=data)
+                                elif primary_log[seq_num]['operation_name'] == 'delRAFT':
+                                    response = requests.delete(url, json=data)
+                                if response.status_code == 200:
+                                    break
+    except:
+        print('Replication Failed')
 
 @app.route('/init', methods=['GET'])
 def init():
@@ -214,8 +214,10 @@ def add():
         for shard_id in shard_list : 
             all_servers[shard_id].append(server_name)
 
-        # Replicate the shards logs in the server 
+        # Replicate the shards logs in the server
         replicate_log(server_name)
+    for shard in new_shards:
+        elect_primary(shard)
     return {},200
 
 @app.route('/rm', methods=['GET'])
@@ -284,7 +286,7 @@ def check_server_health(server_url):
 def health_check():
     try:
         while True:
-            time.sleep(180)
+            time.sleep(240)
             servers_copy = dict(all_shards)
             for server_name, shard_list in servers_copy.items():
                 if not check_server_health(f"http://{server_name}:5000/"):
