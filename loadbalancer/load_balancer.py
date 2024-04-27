@@ -74,7 +74,11 @@ def get_shard_id_from_stud_id(id):
 
 def update_configuration():
     global current_configuration
-    response = requests.post(f"{SHARD_MANAGER_URL}get_primary").json()
+    while True : 
+        response = requests.post(f"{SHARD_MANAGER_URL}get_primary")
+        if response.status_code == 200 :
+            break
+    response = response.json()
     for i in current_configuration['shards'] : 
         i['primary_server'] = response.get(i['Shard_id'])
 
@@ -248,6 +252,7 @@ def remove():
         sm_payload = {
             "n" : N 
         }
+        removed_servers = 0
         # Sanity Checks 
         if len(servers) > N or N >= len(server_name_to_id): 
             return jsonify({"message" : "Length of server list is more than removable instances",
@@ -259,15 +264,16 @@ def remove():
                             "status" : "failure"}), 400
         
         # Server Removal 
-        # TODO after spawning is implemented by Soham
         server__ = []
         for server in servers : 
             for shard_id in server_shard_mapping[server] : 
                 shard_hash_maps[shard_id].removeServer(server_name_to_id[server], server)
             del server_shard_mapping[server]
             del server_name_to_id[server]
+            del current_configuration['servers'][server]
             server__.append(server)
             N-=1
+            removed_servers+=1
 
         while N != 0: 
             random_server = random.choice(list(server_name_to_id.keys()))
@@ -275,8 +281,13 @@ def remove():
                 shard_hash_maps[shard_id].removeServer(server_name_to_id[random_server], random_server)
             del server_shard_mapping[random_server]
             del server_name_to_id[random_server]
+            del current_configuration['servers'][random_server]
             server__.append(random_server)
             N-=1
+            removed_servers+=1 
+        
+        current_configuration['N']= int(current_configuration['N']) - removed_servers 
+        # print(current_configuration['N'], removed_servers)
         sm_payload["servers"] = server__
         response = requests.get(f"{SHARD_MANAGER_URL}rm", json = sm_payload)
         if response.status_code != 200: 

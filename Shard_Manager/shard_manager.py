@@ -57,7 +57,7 @@ def update_log(server):
                     if primary_log[seq_num]['operation_name'] == 'updateRAFT':
                         response = requests.put(url, json=data)
                     elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
-                        print(url)
+                        # print(url)
                         response = requests.post(url, json=data)
                     elif primary_log[seq_num]['operation_name'] == 'delRAFT':
                         response = requests.delete(url, json=data)
@@ -75,7 +75,7 @@ def update_log(server):
                     if primary_log[seq_num]['operation_name'] == 'updateRAFT':
                         response = requests.put(url, json=data)
                     elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
-                        print(url)
+                        # print(url)
                         response = requests.post(url, json=data)
                     elif primary_log[seq_num]['operation_name'] == 'delRAFT':
                         response = requests.delete(url, json=data)
@@ -105,7 +105,7 @@ def replicate_log(server):
                     if primary_log[seq_num]['operation_name'] == 'updateRAFT':
                         response = requests.put(url, json=data)
                     elif primary_log[seq_num]['operation_name'] == 'writeRAFT':
-                        print(url)
+                        # print(url)
                         response = requests.post(url, json=data)
                     elif primary_log[seq_num]['operation_name'] == 'delRAFT':
                         response = requests.delete(url, json=data)
@@ -252,8 +252,15 @@ def rm():
 
 @app.route('/get_primary', methods=['POST'])
 def get_primary():
-    print(primary_servers)
-    return primary_servers,200
+    # print(primary_servers)
+    try  :
+        servers_list = dict(primary_servers)
+        for shard_id_, server_name in servers_list.items() :
+            if not check_server_health(f"http://{server_name}:5000/"):
+                elect_primary({'Shard_id':shard_id_})
+        return primary_servers,200
+    except : 
+        return {}, 400
 
 # Server endpoint for requests at http://localhost:5000/home, methond=GET
 @app.route('/home', methods = ['GET'])
